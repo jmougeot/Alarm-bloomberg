@@ -12,12 +12,7 @@ from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker
 from typing import Optional
 from datetime import datetime
 
-try:
-    from blpapi_import_helper import blpapi
-    BLPAPI_AVAILABLE = True
-except ImportError:
-    BLPAPI_AVAILABLE = False
-    print("[WARNING] blpapi non disponible - Mode simulation activé")
+from blpapi_import_helper import blpapi
 
 
 DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK"]
@@ -55,11 +50,6 @@ class BloombergWorker(QThread):
     
     def run(self):
         """Boucle principale du thread Bloomberg"""
-        if not BLPAPI_AVAILABLE:
-            self.connection_status.emit(False, "blpapi non installé")
-            self._run_simulation_mode()
-            return
-        
         try:
             # Configuration de la session
             session_options = blpapi.SessionOptions()
@@ -94,47 +84,6 @@ class BloombergWorker(QThread):
         finally:
             if self.session:
                 self.session.stop()
-    
-    def _run_simulation_mode(self):
-        """Mode simulation sans Bloomberg"""
-        import random
-        import time
-        
-        self.is_running = True
-        self.connection_status.emit(True, "Mode simulation (sans Bloomberg)")
-        
-        # Prix de base fixes pour chaque ticker (ne changent pas)
-        base_prices = {}
-        
-        while self.is_running:
-            # Traiter les opérations en attente
-            with QMutexLocker(self.mutex):
-                for ticker in self._pending_subscriptions:
-                    # Prix de base fixe basé sur le ticker (reproductible)
-                    # Utilise le hash du ticker pour avoir un prix stable
-                    seed = sum(ord(c) for c in ticker)
-                    base_prices[ticker] = 95 + (seed % 20)  # Prix entre 95 et 115
-                    self.subscription_started.emit(ticker)
-                self._pending_subscriptions.clear()
-                
-                for ticker in self._pending_unsubscriptions:
-                    base_prices.pop(ticker, None)
-                self._pending_unsubscriptions.clear()
-            
-            # Copie pour itérer (évite modification pendant itération)
-            current_tickers = list(base_prices.items())
-            
-            # Émettre des prix simulés avec variations faibles autour du prix de base
-            for ticker, base_price in current_tickers:
-                # Variation faible (±0.5%) autour du prix de base FIXE
-                variation = random.uniform(-0.005, 0.005) * base_price
-                last = base_price + variation
-                spread = random.uniform(0.01, 0.03)
-                bid = last - spread
-                ask = last + spread
-                self.price_updated.emit(ticker, round(last, 4), round(bid, 4), round(ask, 4))
-            
-            time.sleep(1)  # Mise à jour chaque seconde
     
     def _process_pending_operations(self):
         """Traite les subscriptions/unsubscriptions en attente"""

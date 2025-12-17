@@ -129,7 +129,7 @@ class AlertPopup(QWidget):
             }
         """)
         close_btn.clicked.connect(self._close_with_animation)
-        container_layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+        container_layout.addWidget(close_btn, alignment=Qt.AlignCenter) # type: ignore
         
         layout.addWidget(container)
         

@@ -50,7 +50,8 @@ python src\create_shortcut.py
 :: Tentative Bloomberg API
 echo.
 echo [INFO] Tentative d'installation de blpapi 
-python -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
+python -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi --quiet
+echo [OK]
 
 
 echo.
