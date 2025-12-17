@@ -2,9 +2,11 @@
 Splash Screen pour Strategy Price Monitor
 """
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QApplication
-from PySide6.QtCore import Qt, QTimer, Signal, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient, QPen, QBrush, QPixmap
+from PySide6.QtCore import Qt, QTimer, Signal, QPropertyAnimation, QEasingCurve, QPointF
+from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient, QPen, QBrush, QPixmap, QRadialGradient
 import os
+import random
+import math
 
 
 class SplashScreen(QWidget):
@@ -18,9 +20,11 @@ class SplashScreen(QWidget):
         self.setFixedSize(700, 700)
         
         self._progress = 0
+        self.coins = []  # Liste des pièces qui tombent
         self._setup_ui()
         self._center_on_screen()
         self._start_loading()
+        self._start_coin_rain()
     
     def _setup_ui(self):
         """Configure l'interface"""
@@ -109,7 +113,7 @@ class SplashScreen(QWidget):
         layout.addWidget(version_label)
     
     def paintEvent(self, event):
-        """Dessine le fond avec dégradé"""
+        """Dessine le fond avec dégradé et les pièces"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)  # type: ignore
         
@@ -126,6 +130,82 @@ class SplashScreen(QWidget):
         # Ligne décorative en haut
         painter.setPen(QPen(QColor(0, 255, 136), 3))
         painter.drawLine(30, 15, self.width() - 30, 15)
+        
+        # Dessiner les pièces qui tombent
+        self._draw_coins(painter)
+    
+    def _draw_coins(self, painter):
+        """Dessine des pièces 3D avec projection mathématique complète"""
+        for coin in self.coins:
+            painter.save()
+            painter.translate(coin['x'], coin['y'])
+            
+            # Paramètres de la pièce (cylindre)
+            radius = coin['size'] // 2
+            thickness = 3
+            angle = math.radians(coin['rotation'])
+            
+            # Projection 3D -> 2D (rotation autour de l'axe Y)
+            # Pour un cylindre : x' = x*cos(α), z' = x*sin(α)
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            
+            # 1. Dessiner la tranche (bord du cylindre) si visible
+            if abs(sin_a) > 0.1:  # Tranche visible
+                painter.setBrush(QColor(180, 120, 0))
+                painter.setPen(QPen(QColor(150, 100, 0), 1))
+                
+                # Points du contour de la tranche
+                from PySide6.QtCore import QPointF
+                points = []
+                for i in range(20):
+                    theta = (i / 20) * 2 * math.pi
+                    y = radius * math.sin(theta)
+                    z = radius * math.cos(theta)
+                    
+                    # Projections des bords avant et arrière
+                    x_front = thickness * sin_a
+                    x_back = -thickness * sin_a
+                    
+                    # Ajouter les points du contour
+                    if i in [0, 19]:  # Haut et bas
+                        points.append(QPointF(x_back * cos_a, y))
+                        points.append(QPointF(x_front * cos_a, y))
+                
+                # Dessiner la tranche comme un rectangle déformé
+                edge_width = abs(2 * thickness * sin_a * cos_a)
+                painter.drawRect(-edge_width/2, -radius, edge_width, 2*radius)
+            
+            # 2. Dessiner la face arrière (si visible)
+            if cos_a < -0.05:
+                painter.setBrush(QColor(200, 140, 0))
+                painter.setPen(QPen(QColor(150, 100, 0), 2))
+                x_offset = -thickness * sin_a
+                width = int(2 * radius * abs(cos_a))
+                painter.drawEllipse(x_offset - width/2, -radius, width, 2*radius)
+            
+            # 3. Dessiner la face avant (principale)
+            if cos_a > -0.95:
+                # Gradient doré
+                gradient = QRadialGradient(0, 0, radius)
+                gradient.setColorAt(0, QColor(255, 225, 50))
+                gradient.setColorAt(0.5, QColor(255, 200, 0))
+                gradient.setColorAt(1, QColor(200, 150, 0))
+                painter.setBrush(QBrush(gradient))
+                painter.setPen(QPen(QColor(180, 130, 0), 3))
+                
+                x_offset = thickness * sin_a
+                width = int(2 * radius * abs(cos_a))
+                painter.drawEllipse(x_offset - width/2, -radius, width, 2*radius)
+                
+                # Symbole $ si face visible
+                if abs(cos_a) > 0.3:
+                    painter.setPen(QPen(QColor(130, 80, 0), 2))
+                    font = QFont("Arial", max(8, int(radius * 0.8)), QFont.Bold)  # type: ignore
+                    painter.setFont(font)
+                    painter.drawText(-radius//2, radius//3, "$")
+            
+            painter.restore()
     
     def _center_on_screen(self):
         """Centre le splash screen"""
@@ -149,7 +229,7 @@ class SplashScreen(QWidget):
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_progress)
-        self.timer.start(400)
+        self.timer.start(500)
     
     def _update_progress(self):
         """Met à jour la progression"""
@@ -165,8 +245,53 @@ class SplashScreen(QWidget):
     
     def _finish(self):
         """Termine le splash screen"""
+        if hasattr(self, 'coin_timer'):
+            self.coin_timer.stop()
         self.finished.emit()
         self.close()
+    
+    def _start_coin_rain(self):
+        """Démarre l'animation de pluie de pièces"""
+        self.coin_timer = QTimer(self)
+        self.coin_timer.timeout.connect(self._update_coins)
+        self.coin_timer.start(30)  # 30ms = ~33 FPS
+        
+        # Timer pour ajouter de nouvelles pièces
+        self.spawn_timer = QTimer(self)
+        self.spawn_timer.timeout.connect(self._spawn_coin)
+        self.spawn_timer.start(150)  # Nouvelle pièce toutes les 150ms
+    
+    def _spawn_coin(self):
+        """Crée une nouvelle pièce"""
+        coin = {
+            'x': random.randint(0, self.width()),
+            'y': -20,
+            'vx': random.uniform(-1, 1),  # Vitesse horizontale
+            'vy': random.uniform(2, 10),   # Vitesse verticale
+            'rotation': random.uniform(0, 360),
+            'rotation_speed': random.uniform(-10, 10),
+            'size': random.randint(15, 50)
+        }
+        self.coins.append(coin)
+    
+    def _update_coins(self):
+        """Met à jour la position des pièces"""
+        # Mettre à jour chaque pièce
+        for coin in self.coins[:]:
+            coin['y'] += coin['vy']
+            coin['x'] += coin['vx']
+            coin['vy'] += 0.2  # Gravité
+            coin['rotation'] += coin['rotation_speed']
+            
+            # Retirer les pièces hors écran
+            if coin['y'] > self.height() + 200:
+                self.coins.remove(coin)
+        
+        # Limiter le nombre de pièces
+        if len(self.coins) > 150:
+            self.coins = self.coins[-50:]
+        
+        self.update()  # Redessiner
 
 
 def show_splash_and_run():
