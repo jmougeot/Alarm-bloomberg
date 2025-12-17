@@ -1,0 +1,26 @@
+{
+  "strategies": [
+    {
+      "id": "1d861cab-5ba5-40a7-a86c-e91d025e7332",
+      "name": "Stratégie 1",
+      "legs": [
+        {
+          "id": "4a8a9a4a-ff85-4365-9a82-5fe9cf275521",
+          "ticker": "SFRH6 98.00 Comdity",
+          "position": "long",
+          "quantity": 1
+        },
+        {
+          "id": "f54a3ad0-0d85-49e3-987c-1acf531a1d39",
+          "ticker": "SFRH6 98.125 Comdity",
+          "position": "short",
+          "quantity": 1
+        }
+      ],
+      "target_price": -0.05,
+      "price_tolerance": 0.060000000000000005,
+      "status": "Fait",
+      "created_at": "2025-12-17T10:42:16.238718"
+    }
+  ]
+}

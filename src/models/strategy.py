@@ -1,0 +1,191 @@
+"""
+Modèles de données pour les stratégies d'options
+"""
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
+from datetime import datetime
+import uuid
+
+
+class Position(Enum):
+    """Position sur une option"""
+    LONG = "long"
+    SHORT = "short"
+
+
+class StrategyStatus(Enum):
+    """Status d'une stratégie"""
+    EN_COURS = "En cours"
+    FAIT = "Fait"
+    ANNULE = "Annulé"
+
+
+@dataclass
+class OptionLeg:
+    """Représente une jambe d'option dans une stratégie"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    ticker: str = ""  # ex: "SFRH6C 98.00 Comdty"
+    position: Position = Position.LONG
+    quantity: int = 1
+    
+    # Prix temps réel depuis Bloomberg
+    last_price: Optional[float] = None
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    mid: Optional[float] = None
+    last_update: Optional[datetime] = None
+    
+    def update_price(self, last_price: float = None, bid: float = None, ask: float = None):
+        """Met à jour les prix de l'option"""
+        if last_price is not None:
+            self.last_price = last_price
+        if bid is not None:
+            self.bid = bid
+        if ask is not None:
+            self.ask = ask
+        if self.bid is not None and self.ask is not None:
+            self.mid = (self.bid + self.ask) / 2
+        self.last_update = datetime.now()
+    
+    def get_price_contribution(self) -> Optional[float]:
+        """
+        Retourne la contribution au prix de la stratégie.
+        Long = +prix, Short = -prix
+        """
+        price = self.mid if self.mid else self.last_price
+        if price is None:
+            return None
+        
+        multiplier = 1 if self.position == Position.LONG else -1
+        return price * multiplier * self.quantity
+    
+    def to_dict(self) -> dict:
+        """Convertit en dictionnaire pour sauvegarde"""
+        return {
+            "id": self.id,
+            "ticker": self.ticker,
+            "position": self.position.value,
+            "quantity": self.quantity
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "OptionLeg":
+        """Crée depuis un dictionnaire"""
+        return cls(
+            id=data.get("id", str(uuid.uuid4())),
+            ticker=data.get("ticker", ""),
+            position=Position(data.get("position", "long")),
+            quantity=data.get("quantity", 1)
+        )
+
+
+@dataclass 
+class Strategy:
+    """Représente une stratégie d'options (butterfly, condor, etc.)"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = "Nouvelle Stratégie"
+    legs: list[OptionLeg] = field(default_factory=list)
+    
+    # Prix cible
+    target_price: Optional[float] = None
+    price_tolerance: float = 0.05  # ± tolérance
+    
+    # Status
+    status: StrategyStatus = StrategyStatus.EN_COURS
+    
+    # Timestamps
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = None
+    
+    def add_leg(self, ticker: str = "", position: Position = Position.LONG, quantity: int = 1) -> OptionLeg:
+        """Ajoute une jambe à la stratégie"""
+        leg = OptionLeg(ticker=ticker, position=position, quantity=quantity)
+        self.legs.append(leg)
+        self.updated_at = datetime.now()
+        return leg
+    
+    def remove_leg(self, leg_id: str) -> bool:
+        """Supprime une jambe par son ID"""
+        for i, leg in enumerate(self.legs):
+            if leg.id == leg_id:
+                self.legs.pop(i)
+                self.updated_at = datetime.now()
+                return True
+        return False
+    
+    def get_leg(self, leg_id: str) -> Optional[OptionLeg]:
+        """Retourne une jambe par son ID"""
+        for leg in self.legs:
+            if leg.id == leg_id:
+                return leg
+        return None
+    
+    def calculate_strategy_price(self) -> Optional[float]:
+        """
+        Calcule le prix de la stratégie en additionnant les contributions de chaque jambe.
+        Retourne None si une jambe n'a pas de prix.
+        """
+        if not self.legs:
+            return None
+        
+        total = 0.0
+        for leg in self.legs:
+            contribution = leg.get_price_contribution()
+            if contribution is None:
+                return None  # Prix incomplet
+            total += contribution
+        
+        return total
+    
+    def is_target_reached(self) -> Optional[bool]:
+        """
+        Vérifie si le prix cible est atteint (dans la tolérance).
+        Retourne None si pas de prix cible ou prix non disponible.
+        """
+        if self.target_price is None:
+            return None
+        
+        current_price = self.calculate_strategy_price()
+        if current_price is None:
+            return None
+        
+        lower_bound = self.target_price - self.price_tolerance
+        upper_bound = self.target_price + self.price_tolerance
+        
+        return lower_bound <= current_price <= upper_bound
+    
+    def get_all_tickers(self) -> list[str]:
+        """Retourne tous les tickers de la stratégie"""
+        return [leg.ticker for leg in self.legs if leg.ticker]
+    
+    def to_dict(self) -> dict:
+        """Convertit en dictionnaire pour sauvegarde"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "legs": [leg.to_dict() for leg in self.legs],
+            "target_price": self.target_price,
+            "price_tolerance": self.price_tolerance,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "Strategy":
+        """Crée depuis un dictionnaire"""
+        strategy = cls(
+            id=data.get("id", str(uuid.uuid4())),
+            name=data.get("name", "Nouvelle Stratégie"),
+            target_price=data.get("target_price"),
+            price_tolerance=data.get("price_tolerance", 0.05),
+            status=StrategyStatus(data.get("status", "En cours"))
+        )
+        
+        for leg_data in data.get("legs", []):
+            strategy.legs.append(OptionLeg.from_dict(leg_data))
+        
+        if data.get("created_at"):
+            strategy.created_at = datetime.fromisoformat(data["created_at"])
+        
+        return strategy
