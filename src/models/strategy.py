@@ -23,8 +23,8 @@ class StrategyStatus(Enum):
 
 class TargetCondition(Enum):
     """Condition de déclenchement de l'alarme"""
-    INFERIEUR = "inferieur"  # Alarme si prix < cible
-    SUPERIEUR = "superieur"  # Alarme si prix > cible
+    INFERIEUR = "inferieur"  # Alarme si prix <= cible
+    SUPERIEUR = "superieur"  # Alarme si prix >= cible
 
 
 @dataclass

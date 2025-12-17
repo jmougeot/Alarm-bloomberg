@@ -44,7 +44,7 @@ class StrategyBlockWidget(QFrame):
     
     def _setup_ui(self):
         """Configure l'interface utilisateur"""
-        self.setFrameStyle(QFrame.Box | QFrame.Raised)
+        self.setFrameStyle(QFrame.Box | QFrame.Raised) # type: ignore
         self.setLineWidth(2)
         self.setStyleSheet("""
             StrategyBlockWidget {
@@ -84,9 +84,9 @@ class StrategyBlockWidget(QFrame):
         
         # Status
         self.status_combo = QComboBox()
-        self.status_combo.addItem("🔄 En cours", StrategyStatus.EN_COURS)
-        self.status_combo.addItem("✅ Fait", StrategyStatus.FAIT)
-        self.status_combo.addItem("❌ Annulé", StrategyStatus.ANNULE)
+        self.status_combo.addItem("En cours", StrategyStatus.EN_COURS)
+        self.status_combo.addItem("Fait", StrategyStatus.FAIT)
+        self.status_combo.addItem("Annulé", StrategyStatus.ANNULE)
         self.status_combo.setCurrentIndex(
             self.status_combo.findData(self.strategy.status)
         )
@@ -103,7 +103,7 @@ class StrategyBlockWidget(QFrame):
         header_layout.addWidget(self.status_combo)
         
         # Bouton supprimer la stratégie
-        self.delete_strategy_btn = QPushButton("🗑️ Supprimer")
+        self.delete_strategy_btn = QPushButton("Supprimer")
         self.delete_strategy_btn.setStyleSheet("""
             QPushButton {
                 background-color: #8b0000;
@@ -122,7 +122,7 @@ class StrategyBlockWidget(QFrame):
         
         # === Séparateur ===
         separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShape(QFrame.HLine) # type: ignore
         separator.setStyleSheet("background-color: #444;")
         main_layout.addWidget(separator)
         
@@ -135,7 +135,7 @@ class StrategyBlockWidget(QFrame):
         
         # === Bouton ajouter une ligne ===
         add_leg_layout = QHBoxLayout()
-        self.add_leg_btn = QPushButton("➕ Ajouter une option")
+        self.add_leg_btn = QPushButton("Ajouter une option")
         self.add_leg_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2d5a27;
@@ -154,7 +154,7 @@ class StrategyBlockWidget(QFrame):
         
         # === Séparateur ===
         separator2 = QFrame()
-        separator2.setFrameShape(QFrame.HLine)
+        separator2.setFrameShape(QFrame.HLine) # type: ignore
         separator2.setStyleSheet("background-color: #444;")
         main_layout.addWidget(separator2)
         
@@ -162,7 +162,7 @@ class StrategyBlockWidget(QFrame):
         price_layout = QHBoxLayout()
         
         # Prix actuel de la stratégie
-        price_layout.addWidget(QLabel("Prix actuel:"))
+        price_layout.addWidget(QLabel("Prix mid actuel:"))
         self.current_price_label = QLabel("--")
         self.current_price_label.setStyleSheet("""
             QLabel {
@@ -177,7 +177,7 @@ class StrategyBlockWidget(QFrame):
             }
         """)
         self.current_price_label.setMinimumWidth(150)
-        self.current_price_label.setAlignment(Qt.AlignCenter)
+        self.current_price_label.setAlignment(Qt.AlignCenter) # type: ignore
         price_layout.addWidget(self.current_price_label)
         
         price_layout.addSpacing(30)
@@ -185,8 +185,8 @@ class StrategyBlockWidget(QFrame):
         # Condition (inférieur/supérieur)
         price_layout.addWidget(QLabel("Alarme si:"))
         self.condition_combo = QComboBox()
-        self.condition_combo.addItem("⬇️ Inférieur à", TargetCondition.INFERIEUR)
-        self.condition_combo.addItem("⬆️ Supérieur à", TargetCondition.SUPERIEUR)
+        self.condition_combo.addItem("Inférieur à", TargetCondition.INFERIEUR)
+        self.condition_combo.addItem("Supérieur à", TargetCondition.SUPERIEUR)
         self.condition_combo.setCurrentIndex(
             self.condition_combo.findData(self.strategy.target_condition)
         )
@@ -427,7 +427,14 @@ class StrategyBlockWidget(QFrame):
         self._update_target_indicator()
     
     def _update_target_indicator(self):
-        """Met à jour l'indicateur de cible"""
+        """Met à jour l'indicateur de cible (seulement si status EN_COURS)"""
+        # Ne vérifier l'alarme que si le status est EN_COURS
+        if self.strategy.status != StrategyStatus.EN_COURS:
+            self.target_indicator.setStyleSheet("color: #666; font-size: 20px;")
+            self.target_indicator.setToolTip("Alarme désactivée (stratégie non en cours)")
+            self._was_target_reached = False
+            return
+        
         target_reached = self.strategy.is_target_reached()
         
         if target_reached is None:

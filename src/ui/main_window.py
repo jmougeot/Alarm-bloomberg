@@ -2,7 +2,6 @@
 Fenêtre principale de l'application Strategy Monitor
 """
 import json
-import os
 import winsound
 from pathlib import Path
 from typing import Optional
@@ -191,12 +190,21 @@ class MainWindow(QMainWindow):
         self.bloomberg_service: Optional[BloombergService] = None
         self.current_file: Optional[str] = None
         self._alerted_strategies: set[str] = set()  # Stratégies déjà alertées
+        self._bloomberg_started = False  # Pour éviter de démarrer plusieurs fois
         
         self._setup_ui()
         self._setup_menu()
         self._setup_statusbar()
         self._setup_bloomberg()
         self._apply_dark_theme()
+    
+    def showEvent(self, event):
+        """Appelé quand la fenêtre est affichée - démarre Bloomberg automatiquement"""
+        super().showEvent(event)
+        if not self._bloomberg_started:
+            self._bloomberg_started = True
+            # Petit délai pour laisser l'UI se charger
+            QTimer.singleShot(500, self._start_bloomberg_connection)
     
     def _setup_ui(self):
         """Configure l'interface utilisateur"""
@@ -245,23 +253,6 @@ class MainWindow(QMainWindow):
             }
         """)
         toolbar_layout.addWidget(self.connection_label)
-        
-        # Bouton connexion Bloomberg
-        self.connect_btn = QPushButton("🔌 Connecter Bloomberg")
-        self.connect_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ff9800;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover {
-                background-color: #ffa726;
-            }
-        """)
-        self.connect_btn.clicked.connect(self._toggle_bloomberg_connection)
-        toolbar_layout.addWidget(self.connect_btn)
         
         main_layout.addLayout(toolbar_layout)
         
@@ -510,38 +501,10 @@ class MainWindow(QMainWindow):
         popup = AlertPopup(strategy_name, current_price, target_price, is_inferior, self)
         popup.show()
     
-    def _toggle_bloomberg_connection(self):
-        """Toggle la connexion Bloomberg"""
-        if self.bloomberg_service.is_connected:
-            self.bloomberg_service.stop()
-            self.connect_btn.setText("🔌 Connecter Bloomberg")
-            self.connect_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #ff9800;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 10px 20px;
-                }
-                QPushButton:hover {
-                    background-color: #ffa726;
-                }
-            """)
-        else:
+    def _start_bloomberg_connection(self):
+        """Démarre la connexion Bloomberg automatiquement"""
+        if not self.bloomberg_service.is_connected:
             self.bloomberg_service.start()
-            self.connect_btn.setText("⏹️ Déconnecter")
-            self.connect_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f44336;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 10px 20px;
-                }
-                QPushButton:hover {
-                    background-color: #e53935;
-                }
-            """)
             
             # S'abonner à tous les tickers existants
             for strategy in self.strategies.values():
