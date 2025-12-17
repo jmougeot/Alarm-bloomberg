@@ -21,6 +21,12 @@ class StrategyStatus(Enum):
     ANNULE = "Annulé"
 
 
+class TargetCondition(Enum):
+    """Condition de déclenchement de l'alarme"""
+    INFERIEUR = "inferieur"  # Alarme si prix < cible
+    SUPERIEUR = "superieur"  # Alarme si prix > cible
+
+
 @dataclass
 class OptionLeg:
     """Représente une jambe d'option dans une stratégie"""
@@ -87,9 +93,9 @@ class Strategy:
     name: str = "Nouvelle Stratégie"
     legs: list[OptionLeg] = field(default_factory=list)
     
-    # Prix cible
+    # Prix cible et condition
     target_price: Optional[float] = None
-    price_tolerance: float = 0.05  # ± tolérance
+    target_condition: TargetCondition = TargetCondition.INFERIEUR  # Alarme si prix < ou > cible
     
     # Status
     status: StrategyStatus = StrategyStatus.EN_COURS
@@ -140,7 +146,9 @@ class Strategy:
     
     def is_target_reached(self) -> Optional[bool]:
         """
-        Vérifie si le prix cible est atteint (dans la tolérance).
+        Vérifie si le prix a atteint la cible selon la condition.
+        - INFERIEUR: alarme si prix <= cible
+        - SUPERIEUR: alarme si prix >= cible
         Retourne None si pas de prix cible ou prix non disponible.
         """
         if self.target_price is None:
@@ -150,10 +158,10 @@ class Strategy:
         if current_price is None:
             return None
         
-        lower_bound = self.target_price - self.price_tolerance
-        upper_bound = self.target_price + self.price_tolerance
-        
-        return lower_bound <= current_price <= upper_bound
+        if self.target_condition == TargetCondition.INFERIEUR:
+            return current_price <= self.target_price
+        else:  # SUPERIEUR
+            return current_price >= self.target_price
     
     def get_all_tickers(self) -> list[str]:
         """Retourne tous les tickers de la stratégie"""
@@ -166,7 +174,7 @@ class Strategy:
             "name": self.name,
             "legs": [leg.to_dict() for leg in self.legs],
             "target_price": self.target_price,
-            "price_tolerance": self.price_tolerance,
+            "target_condition": self.target_condition.value,
             "status": self.status.value,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
@@ -174,11 +182,12 @@ class Strategy:
     @classmethod
     def from_dict(cls, data: dict) -> "Strategy":
         """Crée depuis un dictionnaire"""
+        condition = data.get("target_condition", "inferieur")
         strategy = cls(
             id=data.get("id", str(uuid.uuid4())),
             name=data.get("name", "Nouvelle Stratégie"),
             target_price=data.get("target_price"),
-            price_tolerance=data.get("price_tolerance", 0.05),
+            target_condition=TargetCondition(condition) if condition else TargetCondition.INFERIEUR,
             status=StrategyStatus(data.get("status", "En cours"))
         )
         

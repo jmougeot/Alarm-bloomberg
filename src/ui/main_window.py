@@ -24,16 +24,16 @@ from .strategy_block_widget import StrategyBlockWidget
 class AlertPopup(QWidget):
     """Popup d'alerte animé quand une cible est atteinte"""
     
-    def __init__(self, strategy_name: str, current_price: float, target_price: float, parent=None):
+    def __init__(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool, parent=None):
         super().__init__(parent, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_DeleteOnClose)
         
-        self._setup_ui(strategy_name, current_price, target_price)
+        self._setup_ui(strategy_name, current_price, target_price, is_inferior)
         self._setup_animation()
         self._position_popup()
     
-    def _setup_ui(self, strategy_name: str, current_price: float, target_price: float):
+    def _setup_ui(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool):
         """Configure l'interface du popup"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -59,8 +59,9 @@ class AlertPopup(QWidget):
         container_layout.setContentsMargins(20, 15, 20, 15)
         container_layout.setSpacing(10)
         
-        # Titre
-        title = QLabel("🎯 CIBLE ATTEINTE!")
+        # Titre avec icône selon la condition
+        icon = "⬇️" if is_inferior else "⬆️"
+        title = QLabel(f"{icon} ALARME!")
         title.setStyleSheet("""
             QLabel {
                 color: #00ff00;
@@ -83,19 +84,33 @@ class AlertPopup(QWidget):
         name_label.setAlignment(Qt.AlignCenter)
         container_layout.addWidget(name_label)
         
-        # Prix
-        price_text = f"Prix: {current_price:.4f}" if current_price else "Prix: --"
-        target_text = f"Cible: {target_price:.4f}" if target_price else "Cible: --"
-        
-        price_label = QLabel(f"{price_text}  |  {target_text}")
+        # Prix actuel
+        price_text = f"Prix actuel: {current_price:.4f}" if current_price else "Prix: --"
+        price_label = QLabel(price_text)
         price_label.setStyleSheet("""
             QLabel {
                 color: #aaffaa;
-                font-size: 14px;
+                font-size: 16px;
+                font-weight: bold;
             }
         """)
         price_label.setAlignment(Qt.AlignCenter)
         container_layout.addWidget(price_label)
+        
+        # Condition
+        condition_symbol = "≤" if is_inferior else "≥"
+        condition_text = "inférieur" if is_inferior else "supérieur"
+        target_text = f"Prix {condition_text} à {target_price:.4f}" if target_price else "Cible: --"
+        
+        condition_label = QLabel(target_text)
+        condition_label.setStyleSheet("""
+            QLabel {
+                color: #88ff88;
+                font-size: 14px;
+            }
+        """)
+        condition_label.setAlignment(Qt.AlignCenter)
+        container_layout.addWidget(condition_label)
         
         # Bouton fermer
         close_btn = QPushButton("✓ OK")
@@ -442,7 +457,7 @@ class MainWindow(QMainWindow):
             self.bloomberg_service.unsubscribe(ticker)
     
     def _on_target_reached(self, strategy_id: str):
-        """Appelé quand une cible est atteinte"""
+        """Événement déclenché quand une cible est atteinte"""
         # Éviter de spammer les alertes
         if strategy_id in self._alerted_strategies:
             return
@@ -452,15 +467,18 @@ class MainWindow(QMainWindow):
             self._alerted_strategies.add(strategy_id)
             
             current_price = strategy.calculate_strategy_price()
+            from ..models.strategy import TargetCondition
+            is_inferior = strategy.target_condition == TargetCondition.INFERIEUR
             
             # Jouer le son d'alerte
             self._play_alert_sound()
             
             # Afficher le popup
-            self._show_alert_popup(strategy.name, current_price, strategy.target_price)
+            self._show_alert_popup(strategy.name, current_price, strategy.target_price, is_inferior)
             
+            condition_text = "inférieur" if is_inferior else "supérieur"
             self.statusbar.showMessage(
-                f"🎯 CIBLE ATTEINTE pour '{strategy.name}'!", 
+                f"🚨 ALARME! '{strategy.name}' - Prix {condition_text} à {strategy.target_price:.4f}!", 
                 5000
             )
     
@@ -478,9 +496,9 @@ class MainWindow(QMainWindow):
         except Exception:
             pass  # Ignorer si le son ne fonctionne pas
     
-    def _show_alert_popup(self, strategy_name: str, current_price: float, target_price: float):
+    def _show_alert_popup(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool):
         """Affiche un popup d'alerte"""
-        popup = AlertPopup(strategy_name, current_price, target_price, self)
+        popup = AlertPopup(strategy_name, current_price, target_price, is_inferior, self)
         popup.show()
     
     def _toggle_bloomberg_connection(self):

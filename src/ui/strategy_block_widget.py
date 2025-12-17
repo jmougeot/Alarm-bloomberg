@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
 
-from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus
+from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition
 from .option_leg_widget import OptionLegWidget
 
 
@@ -182,44 +182,45 @@ class StrategyBlockWidget(QFrame):
         
         price_layout.addSpacing(30)
         
+        # Condition (inférieur/supérieur)
+        price_layout.addWidget(QLabel("Alarme si:"))
+        self.condition_combo = QComboBox()
+        self.condition_combo.addItem("⬇️ Inférieur à", TargetCondition.INFERIEUR)
+        self.condition_combo.addItem("⬆️ Supérieur à", TargetCondition.SUPERIEUR)
+        self.condition_combo.setCurrentIndex(
+            self.condition_combo.findData(self.strategy.target_condition)
+        )
+        self.condition_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #333;
+                color: #fff;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 8px;
+                min-width: 130px;
+            }
+        """)
+        price_layout.addWidget(self.condition_combo)
+        
         # Prix cible
-        price_layout.addWidget(QLabel("Prix cible:"))
         self.target_price_spin = QDoubleSpinBox()
         self.target_price_spin.setRange(-1000, 1000)
         self.target_price_spin.setDecimals(4)
         self.target_price_spin.setSingleStep(0.01)
-        self.target_price_spin.setValue(self.strategy.target_price or 0)
-        self.target_price_spin.setSpecialValueText("Non défini")
+        self.target_price_spin.setValue(self.strategy.target_price if self.strategy.target_price is not None else 0)
+        self.target_price_spin.setSpecialValueText("--")
         self.target_price_spin.setStyleSheet("""
             QDoubleSpinBox {
                 background-color: #333;
-                color: #fff;
+                color: #ffcc00;
                 border: 1px solid #555;
                 border-radius: 4px;
                 padding: 4px 8px;
-                min-width: 100px;
+                min-width: 120px;
+                font-weight: bold;
             }
         """)
         price_layout.addWidget(self.target_price_spin)
-        
-        # Tolérance
-        price_layout.addWidget(QLabel("±"))
-        self.tolerance_spin = QDoubleSpinBox()
-        self.tolerance_spin.setRange(0, 100)
-        self.tolerance_spin.setDecimals(4)
-        self.tolerance_spin.setSingleStep(0.01)
-        self.tolerance_spin.setValue(self.strategy.price_tolerance)
-        self.tolerance_spin.setStyleSheet("""
-            QDoubleSpinBox {
-                background-color: #333;
-                color: #fff;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 4px 8px;
-                min-width: 80px;
-            }
-        """)
-        price_layout.addWidget(self.tolerance_spin)
         
         # Indicateur cible atteinte
         self.target_indicator = QLabel("⬤")
@@ -236,8 +237,8 @@ class StrategyBlockWidget(QFrame):
         self.status_combo.currentIndexChanged.connect(self._on_status_changed)
         self.delete_strategy_btn.clicked.connect(self._on_delete_strategy)
         self.add_leg_btn.clicked.connect(self._on_add_leg)
-        self.target_price_spin.valueChanged.connect(self._on_target_changed)
-        self.tolerance_spin.valueChanged.connect(self._on_tolerance_changed)
+        self.condition_combo.currentIndexChanged.connect(self._on_condition_changed)
+        self.target_price_spin.valueChanged.connect(self._on_target_price_changed)
     
     def _load_legs(self):
         """Charge les legs existants"""
@@ -351,22 +352,26 @@ class StrategyBlockWidget(QFrame):
         self._update_strategy_price()
         self.strategy_updated.emit(self.strategy.id)
     
-    def _on_target_changed(self, value: float):
+    def _on_condition_changed(self, index: int):
+        """Appelé quand la condition change"""
+        self.strategy.target_condition = self.condition_combo.currentData()
+        self._update_target_indicator()
+        self.strategy_updated.emit(self.strategy.id)
+    
+    def _on_target_price_changed(self, value: float):
         """Appelé quand le prix cible change"""
         self.strategy.target_price = value if value != 0 else None
         self._update_target_indicator()
         self.strategy_updated.emit(self.strategy.id)
     
-    def _on_tolerance_changed(self, value: float):
-        """Appelé quand la tolérance change"""
-        self.strategy.price_tolerance = value
-        self._update_target_indicator()
-        self.strategy_updated.emit(self.strategy.id)
-    
     def update_price(self, ticker: str, last_price: float, bid: float, ask: float):
         """Met à jour le prix d'un ticker"""
+        # Normaliser le ticker pour la comparaison (strip + upper)
+        ticker_normalized = ticker.strip().upper()
+        
         for leg_id, widget in self.leg_widgets.items():
-            if widget.ticker == ticker:
+            widget_ticker = widget.ticker.strip().upper() if widget.ticker else ""
+            if widget_ticker == ticker_normalized:
                 widget.update_price(last_price, bid, ask)
         
         self._update_strategy_price()
@@ -434,7 +439,8 @@ class StrategyBlockWidget(QFrame):
                 self.target_left.emit(self.strategy.id)
         elif target_reached:
             self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
-            self.target_indicator.setToolTip("✅ CIBLE ATTEINTE!")
+            condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
+            self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
             # Émettre le signal seulement si on vient d'atteindre la cible
             if not self._was_target_reached:
                 self._was_target_reached = True
@@ -451,9 +457,10 @@ class StrategyBlockWidget(QFrame):
             current = self.strategy.calculate_strategy_price()
             if current is not None and self.strategy.target_price is not None:
                 diff = self.strategy.target_price - current
-                self.target_indicator.setToolTip(f"Distance: {diff:+.4f}")
+                condition_text = "⬇️" if self.strategy.target_condition == TargetCondition.INFERIEUR else "⬆️"
+                self.target_indicator.setToolTip(f"{condition_text} Distance: {diff:+.4f}")
             else:
-                self.target_indicator.setToolTip("Cible non atteinte")
+                self.target_indicator.setToolTip("En attente...")
     
     @property
     def strategy_id(self) -> str:

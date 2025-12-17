@@ -103,28 +103,36 @@ class BloombergWorker(QThread):
         self.is_running = True
         self.connection_status.emit(True, "Mode simulation (sans Bloomberg)")
         
-        simulated_prices = {}
+        # Prix de base fixes pour chaque ticker (ne changent pas)
+        base_prices = {}
         
         while self.is_running:
             # Traiter les opérations en attente
             with QMutexLocker(self.mutex):
                 for ticker in self._pending_subscriptions:
-                    simulated_prices[ticker] = random.uniform(90, 110)
+                    # Prix de base fixe basé sur le ticker (reproductible)
+                    # Utilise le hash du ticker pour avoir un prix stable
+                    seed = sum(ord(c) for c in ticker)
+                    base_prices[ticker] = 95 + (seed % 20)  # Prix entre 95 et 115
                     self.subscription_started.emit(ticker)
                 self._pending_subscriptions.clear()
                 
                 for ticker in self._pending_unsubscriptions:
-                    simulated_prices.pop(ticker, None)
+                    base_prices.pop(ticker, None)
                 self._pending_unsubscriptions.clear()
             
-            # Émettre des prix simulés
-            for ticker, base_price in simulated_prices.items():
-                variation = random.uniform(-0.5, 0.5)
+            # Copie pour itérer (évite modification pendant itération)
+            current_tickers = list(base_prices.items())
+            
+            # Émettre des prix simulés avec variations faibles autour du prix de base
+            for ticker, base_price in current_tickers:
+                # Variation faible (±0.5%) autour du prix de base FIXE
+                variation = random.uniform(-0.005, 0.005) * base_price
                 last = base_price + variation
-                bid = last - random.uniform(0.01, 0.05)
-                ask = last + random.uniform(0.01, 0.05)
-                self.price_updated.emit(ticker, last, bid, ask)
-                simulated_prices[ticker] = last
+                spread = random.uniform(0.01, 0.03)
+                bid = last - spread
+                ask = last + spread
+                self.price_updated.emit(ticker, round(last, 4), round(bid, 4), round(ask, 4))
             
             time.sleep(1)  # Mise à jour chaque seconde
     
@@ -259,6 +267,7 @@ class BloombergService(QObject):
     
     def subscribe(self, ticker: str):
         """Subscribe à un ticker"""
+        ticker = ticker.strip().upper() if ticker else ""
         if not ticker or ticker in self._active_subscriptions:
             return
         
@@ -268,6 +277,7 @@ class BloombergService(QObject):
     
     def unsubscribe(self, ticker: str):
         """Unsubscribe d'un ticker"""
+        ticker = ticker.strip().upper() if ticker else ""
         if ticker not in self._active_subscriptions:
             return
         
