@@ -4,6 +4,7 @@ Splash Screen pour Strategy Price Monitor
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QApplication
 from PySide6.QtCore import Qt, QTimer, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient, QPen, QBrush, QPixmap
+import os
 
 
 class SplashScreen(QWidget):
@@ -14,7 +15,7 @@ class SplashScreen(QWidget):
     def __init__(self):
         super().__init__(None, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)  # type: ignore
         self.setAttribute(Qt.WA_TranslucentBackground)  # type: ignore
-        self.setFixedSize(500, 350)
+        self.setFixedSize(700, 700)
         
         self._progress = 0
         self._setup_ui()
@@ -40,22 +41,21 @@ class SplashScreen(QWidget):
             }
         """)
         layout.addWidget(self.title_label)
-        
+        subtitle = QLabel("Real-Time Options Strategy Pricing")
+
         # Image Picsou
-        import os
         app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        picsou_path = os.path.join(app_dir, "assets", "picsou2.png")
+        picsou_path = os.path.join(app_dir, "assets", "picsou.jpg")
         if os.path.exists(picsou_path):
             picsou_label = QLabel()
             pixmap = QPixmap(picsou_path)
             if not pixmap.isNull():
-                pixmap = pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # type: ignore
+                pixmap = pixmap.scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # type: ignore
                 picsou_label.setPixmap(pixmap)
                 picsou_label.setAlignment(Qt.AlignCenter)  # type: ignore
                 layout.addWidget(picsou_label)
-        
+
         # Sous-titre
-        subtitle = QLabel("Real-Time Options Strategy Pricing")
         subtitle.setAlignment(Qt.AlignCenter)  # type: ignore
         subtitle.setStyleSheet("""
             QLabel {
@@ -65,32 +65,6 @@ class SplashScreen(QWidget):
             }
         """)
         layout.addWidget(subtitle)
-        
-        layout.addSpacing(20)
-        
-        # Logo ASCII art stylisé
-        logo_text = """
-    ╔══════════════════════════════╗
-    ║   ┌─────┐  ┌─────┐  ┌─────┐  ║
-    ║   │ BUY │──│ SELL│──│ BUY │  ║
-    ║   └──┬──┘  └──┬──┘  └──┬──┘  ║
-    ║      │        │        │     ║
-    ║   ───┴────────┴────────┴───  ║
-    ║        B U T T E R F L Y     ║
-    ╚══════════════════════════════╝
-        """
-        
-        logo_label = QLabel(logo_text)
-        logo_label.setAlignment(Qt.AlignCenter)  # type: ignore
-        logo_label.setStyleSheet("""
-            QLabel {
-                color: #00aaff;
-                font-size: 11px;
-                font-family: 'Consolas', 'Courier New', monospace;
-                line-height: 1.2;
-            }
-        """)
-        layout.addWidget(logo_label)
         
         layout.addSpacing(10)
         

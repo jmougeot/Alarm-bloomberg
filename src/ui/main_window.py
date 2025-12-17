@@ -73,7 +73,7 @@ class AlertPopup(QWidget):
         
         # Image Picsou
         import os
-        picsou_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "picsou2.png")
+        picsou_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "picsou.jpg")
         if os.path.exists(picsou_path):
             picsou_label = QLabel()
             pixmap = QPixmap(picsou_path)
