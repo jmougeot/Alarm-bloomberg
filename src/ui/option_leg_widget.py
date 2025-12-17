@@ -59,7 +59,7 @@ class OptionLegWidget(QWidget):
         # Prix en direct (lecture seule)
         self.price_label = QLabel("--")
         self.price_label.setMinimumWidth(100)
-        self.price_label.setAlignment(Qt.AlignCenter)
+        self.price_label.setAlignment(Qt.AlignCenter) # type: ignore
         self.price_label.setStyleSheet("""
             QLabel {
                 background-color: #2d2d2d;
@@ -76,7 +76,7 @@ class OptionLegWidget(QWidget):
         # Contribution au prix
         self.contribution_label = QLabel("(+0.00)")
         self.contribution_label.setMinimumWidth(80)
-        self.contribution_label.setAlignment(Qt.AlignCenter)
+        self.contribution_label.setAlignment(Qt.AlignCenter) # type: ignore
         self.contribution_label.setStyleSheet("""
             QLabel {
                 color: #888;
@@ -147,7 +147,7 @@ class OptionLegWidget(QWidget):
         """Appelé quand le bouton supprimer est cliqué"""
         self.delete_requested.emit(self.leg.id)
     
-    def update_price(self, last_price: float = None, bid: float = None, ask: float = None):
+    def update_price(self, last_price: float, bid: float, ask: float):
         """Met à jour le prix affiché"""
         self.leg.update_price(last_price, bid, ask)
         self.update_price_display()
