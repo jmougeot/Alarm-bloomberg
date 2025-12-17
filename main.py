@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
+from src.ui.splash_screen import SplashScreen
 from src.ui.main_window import MainWindow
 
 
@@ -31,9 +32,18 @@ def main():
     app.setApplicationName("Strategy Price Monitor")
     app.setOrganizationName("Bloomberg Tools")
     
-    # Créer et afficher la fenêtre principale
-    window = MainWindow()
-    window.show()
+    # Variable pour stocker la fenêtre principale
+    main_window = None
+    
+    def on_splash_finished():
+        nonlocal main_window
+        main_window = MainWindow()
+        main_window.show()
+    
+    # Afficher le splash screen
+    splash = SplashScreen()
+    splash.finished.connect(on_splash_finished)
+    splash.show()
     
     sys.exit(app.exec())
 
