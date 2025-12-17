@@ -52,7 +52,7 @@ echo.
 echo [INFO] Tentative d'installation de blpapi (optionnel)...
 if exist "C:\blp\DAPI" (
     set BLPAPI_ROOT=C:\blp\DAPI
-    pip install blpapi --quiet 2>nul
+    python -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
     if errorlevel 1 (
         echo    [INFO] blpapi non installe - Mode simulation actif
     ) else (
