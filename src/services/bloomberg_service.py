@@ -12,7 +12,14 @@ from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker, QWait
 from typing import Optional
 from datetime import datetime
 
-from blpapi_import_helper import blpapi
+# Import blpapi avec gestion d'erreur
+try:
+    from blpapi_import_helper import blpapi
+    BLPAPI_AVAILABLE = True
+except ImportError:
+    BLPAPI_AVAILABLE = False
+    blpapi = None
+    print("[WARNING] blpapi non disponible - Connexion Bloomberg impossible")
 
 
 DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK"]
@@ -63,7 +70,16 @@ class BloombergWorker(QThread):
     
     def run(self):
         """Boucle principale du thread Bloomberg"""
+        print("[Bloomberg] Démarrage du worker...")
+        
+        # Vérifier que blpapi est disponible
+        if not BLPAPI_AVAILABLE:
+            print("[Bloomberg] blpapi non disponible")
+            self.connection_status.emit(False, "blpapi non installé - Installez le SDK Bloomberg")
+            return
+        
         try:
+            print("[Bloomberg] Configuration de la session...")
             # Configuration de la session
             session_options = blpapi.SessionOptions()
             session_options.setServerHost(self.host)
@@ -71,18 +87,22 @@ class BloombergWorker(QThread):
             session_options.setDefaultSubscriptionService(DEFAULT_SERVICE)
             
             # Créer la session avec un event handler
+            print("[Bloomberg] Création de la session...")
             handler = BloombergEventHandler(self)
             self.session = blpapi.Session(session_options, handler)
             
+            print("[Bloomberg] Démarrage de la session...")
             if not self.session.start():
-                self.connection_status.emit(False, "Impossible de démarrer la session")
+                self.connection_status.emit(False, "Impossible de démarrer la session Bloomberg")
                 return
             
+            print("[Bloomberg] Ouverture du service...")
             if not self.session.openService(DEFAULT_SERVICE):
                 self.connection_status.emit(False, f"Impossible d'ouvrir {DEFAULT_SERVICE}")
                 return
             
             self.is_running = True
+            print("[Bloomberg] Connecté!")
             self.connection_status.emit(True, "Connecté à Bloomberg")
             
             # Boucle pour traiter les subscriptions en attente
@@ -96,11 +116,19 @@ class BloombergWorker(QThread):
                     if not self._pending_subscriptions and not self._pending_unsubscriptions:
                         self._condition.wait(self.mutex, 100)
             
+            print("[Bloomberg] Arrêt du worker")
+            
         except Exception as e:
-            self.connection_status.emit(False, f"Erreur: {str(e)}")
+            import traceback
+            print(f"[Bloomberg] ERREUR: {e}")
+            traceback.print_exc()
+            self.connection_status.emit(False, f"Erreur Bloomberg: {str(e)}")
         finally:
             if self.session:
-                self.session.stop()
+                try:
+                    self.session.stop()
+                except:
+                    pass
     
     def _process_pending_operations(self):
         """Traite les subscriptions/unsubscriptions en attente"""
