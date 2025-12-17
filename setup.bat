@@ -42,57 +42,10 @@ echo    - pywin32 + winshell (raccourci Windows)...
 pip install pywin32 winshell --quiet
 echo    [OK] pywin32 + winshell
 
-:: Creer le raccourci via Python inline
+:: Creer le raccourci via script Python
 echo.
 echo [INFO] Creation du raccourci...
-python -c "
-import os
-import sys
-
-try:
-    import winshell
-    from win32com.client import Dispatch
-    
-    app_dir = os.getcwd()
-    
-    python_dir = os.path.dirname(sys.executable)
-    pythonw = os.path.join(python_dir, 'pythonw.exe')
-    if not os.path.exists(pythonw):
-        pythonw = sys.executable
-    
-    main_script = os.path.join(app_dir, 'main.py')
-    icon_path = os.path.join(app_dir, 'assets', 'icon.ico')
-    
-    # Raccourci Bureau
-    desktop = winshell.desktop()
-    shortcut_path = os.path.join(desktop, 'Strategy Monitor.lnk')
-    
-    shell = Dispatch('WScript.Shell')
-    shortcut = shell.CreateShortCut(shortcut_path)
-    shortcut.Targetpath = pythonw
-    shortcut.Arguments = f'\"{main_script}\"'
-    shortcut.WorkingDirectory = app_dir
-    shortcut.Description = 'Strategy Price Monitor'
-    if os.path.exists(icon_path):
-        shortcut.IconLocation = f'{icon_path},0'
-    shortcut.save()
-    print('    [OK] Raccourci Bureau cree')
-    
-    # Raccourci Menu Demarrer
-    start_menu = winshell.start_menu()
-    shortcut_path2 = os.path.join(start_menu, 'Programs', 'Strategy Monitor.lnk')
-    shortcut2 = shell.CreateShortCut(shortcut_path2)
-    shortcut2.Targetpath = pythonw
-    shortcut2.Arguments = f'\"{main_script}\"'
-    shortcut2.WorkingDirectory = app_dir
-    if os.path.exists(icon_path):
-        shortcut2.IconLocation = f'{icon_path},0'
-    shortcut2.save()
-    print('    [OK] Raccourci Menu Demarrer cree')
-    
-except Exception as e:
-    print(f'    [!] Erreur raccourci: {e}')
-"
+python src\create_shortcut.py
 
 :: Tentative Bloomberg API
 echo.
