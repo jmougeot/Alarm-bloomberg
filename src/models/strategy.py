@@ -43,12 +43,12 @@ class OptionLeg:
     last_update: Optional[datetime] = None
     
     def update_price(self, last_price: float = None, bid: float = None, ask: float = None):
-        """Met à jour les prix de l'option"""
-        if last_price is not None:
+        """Met à jour les prix de l'option. Ignore les valeurs négatives (pas de donnée)."""
+        if last_price is not None and last_price >= 0:
             self.last_price = last_price
-        if bid is not None:
+        if bid is not None and bid >= 0:
             self.bid = bid
-        if ask is not None:
+        if ask is not None and ask >= 0:
             self.ask = ask
         if self.bid is not None and self.ask is not None:
             self.mid = (self.bid + self.ask) / 2

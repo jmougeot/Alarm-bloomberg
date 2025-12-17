@@ -8,7 +8,7 @@ import os
 # Ajouter le chemin du module bloomberg
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bloomberg'))
 
-from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker
+from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker, QWaitCondition
 from typing import Optional
 from datetime import datetime
 
@@ -29,6 +29,18 @@ class PriceUpdate:
         self.timestamp: datetime = datetime.now()
 
 
+class BloombergEventHandler:
+    """Handler d'événements Bloomberg - appelé automatiquement par blpapi"""
+    
+    def __init__(self, worker: 'BloombergWorker'):
+        self.worker = worker
+    
+    def processEvent(self, event, session):
+        """Callback appelé par Bloomberg quand un événement arrive"""
+        self.worker._process_event(event)
+        return False  # Continue à traiter les événements
+
+
 class BloombergWorker(QThread):
     """Worker thread pour gérer la session Bloomberg"""
     
@@ -47,6 +59,7 @@ class BloombergWorker(QThread):
         self.mutex = QMutex()
         self._pending_subscriptions: list[str] = []
         self._pending_unsubscriptions: list[str] = []
+        self._condition = QWaitCondition()
     
     def run(self):
         """Boucle principale du thread Bloomberg"""
@@ -57,7 +70,9 @@ class BloombergWorker(QThread):
             session_options.setServerPort(self.port)
             session_options.setDefaultSubscriptionService(DEFAULT_SERVICE)
             
-            self.session = blpapi.Session(session_options)
+            # Créer la session avec un event handler
+            handler = BloombergEventHandler(self)
+            self.session = blpapi.Session(session_options, handler)
             
             if not self.session.start():
                 self.connection_status.emit(False, "Impossible de démarrer la session")
@@ -70,14 +85,16 @@ class BloombergWorker(QThread):
             self.is_running = True
             self.connection_status.emit(True, "Connecté à Bloomberg")
             
-            # Boucle d'événements
+            # Boucle pour traiter les subscriptions en attente
+            # Les événements Bloomberg sont traités via le handler (callback)
             while self.is_running:
-                # Traiter les subscriptions/unsubscriptions en attente
                 self._process_pending_operations()
                 
-                # Traiter les événements Bloomberg
-                event = self.session.nextEvent(500)  # timeout 500ms
-                self._process_event(event)
+                # Attendre qu'une nouvelle subscription soit demandée
+                # ou timeout de 100ms pour vérifier is_running
+                with QMutexLocker(self.mutex):
+                    if not self._pending_subscriptions and not self._pending_unsubscriptions:
+                        self._condition.wait(self.mutex, 100)
             
         except Exception as e:
             self.connection_status.emit(False, f"Erreur: {str(e)}")
@@ -138,12 +155,14 @@ class BloombergWorker(QThread):
                     except:
                         pass
                 
-                self.price_updated.emit(
-                    ticker,
-                    last_price if last_price else 0.0,
-                    bid if bid else 0.0,
-                    ask if ask else 0.0
-                )
+                # Émettre seulement si on a au moins une valeur
+                if last_price is not None or bid is not None or ask is not None:
+                    self.price_updated.emit(
+                        ticker,
+                        last_price if last_price is not None else -1.0,  # -1 = pas de valeur
+                        bid if bid is not None else -1.0,
+                        ask if ask is not None else -1.0
+                    )
         
         elif event.eventType() == blpapi.Event.SUBSCRIPTION_STATUS:
             for msg in event:
@@ -158,6 +177,7 @@ class BloombergWorker(QThread):
         with QMutexLocker(self.mutex):
             if ticker not in self.subscriptions and ticker not in self._pending_subscriptions:
                 self._pending_subscriptions.append(ticker)
+                self._condition.wakeOne()  # Réveille le thread
     
     def unsubscribe(self, ticker: str):
         """Supprime une subscription (thread-safe)"""
@@ -166,10 +186,13 @@ class BloombergWorker(QThread):
                 self._pending_unsubscriptions.append(ticker)
                 if ticker in self._pending_subscriptions:
                     self._pending_subscriptions.remove(ticker)
+                self._condition.wakeOne()  # Réveille le thread
     
     def stop(self):
         """Arrête le worker"""
         self.is_running = False
+        with QMutexLocker(self.mutex):
+            self._condition.wakeOne()  # Réveille le thread pour qu'il se termine
         self.wait()
 
 
