@@ -49,18 +49,9 @@ python src\create_shortcut.py
 
 :: Tentative Bloomberg API
 echo.
-echo [INFO] Tentative d'installation de blpapi (optionnel)...
-if exist "C:\blp\DAPI" (
-    set BLPAPI_ROOT=C:\blp\DAPI
-    python -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
-    if errorlevel 1 (
-        echo    [INFO] blpapi non installe - Mode simulation actif
-    ) else (
-        echo    [OK] blpapi installe
-    )
-) else (
-    echo    [INFO] Bloomberg SDK non trouve - Mode simulation actif
-)
+echo [INFO] Tentative d'installation de blpapi 
+python -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
+
 
 echo.
 echo ============================================================
