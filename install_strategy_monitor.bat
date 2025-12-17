@@ -165,10 +165,8 @@ echo    [OK] pywin32 + winshell
 :: Tentative Bloomberg API (optionnel)
 echo.
 echo [INFO] Tentative d'installation de Bloomberg API (optionnel)...
-python -m pip install blpapi `
-  --index-url https://blpapi.bloomberg.com/repository/releases/python/simple/ `
-  --trusted-host blpapi.bloomberg.com
-echo [OK]if errorlevel 1 (
+python -m pip install blpapi --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ --trusted-host blpapi.bloomberg.com --quiet 2>nul
+if errorlevel 1 (
     echo    [INFO] Bloomberg API non disponible - l'app fonctionnera sans
 ) else (
     echo    [OK] Bloomberg API
