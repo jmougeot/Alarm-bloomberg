@@ -206,7 +206,7 @@ class SplashScreen(QWidget):
                 inner_gradient.setColorAt(0.5, QColor(255, 220, 60))  # Doré clair
                 inner_gradient.setColorAt(1, QColor(240, 190, 30))    # Bordure claire
                 painter.setBrush(QBrush(inner_gradient))
-                painter.setPen(Qt.NoPen)
+                painter.setPen(Qt.NoPen)  # type: ignore
                 painter.drawEllipse(x_offset - inner_width/2, -inner_radius, inner_width, 2*inner_radius)
                 
                 # Symbole $ si face visible

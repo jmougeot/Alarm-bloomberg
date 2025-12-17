@@ -38,7 +38,7 @@ class OptionLegWidget(QWidget):
         
         # Ticker input
         self.ticker_edit = QLineEdit()
-        self.ticker_edit.setPlaceholderText("Ticker (ex: SFRH6C 98.00 Comdty)")
+        self.ticker_edit.setPlaceholderText("SFRH6C 98.00")
         self.ticker_edit.setMinimumWidth(250)
         layout.addWidget(self.ticker_edit)
         
@@ -123,6 +123,12 @@ class OptionLegWidget(QWidget):
     def _on_ticker_changed(self):
         """Appelé quand le ticker change"""
         new_ticker = self.ticker_edit.text().strip()
+        
+        # Ajouter automatiquement " Comdty" si pas déjà présent
+        if new_ticker and not new_ticker.endswith(" Comdty"):
+            new_ticker = new_ticker + " Comdty"
+            self.ticker_edit.setText(new_ticker)
+        
         if new_ticker != self.leg.ticker:
             old_ticker = self.leg.ticker
             self.leg.ticker = new_ticker
