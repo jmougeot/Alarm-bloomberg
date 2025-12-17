@@ -142,10 +142,10 @@ class AlertPopup(QWidget):
         self.fade_in.setEasingCurve(QEasingCurve.OutCubic) # type: ignore
         
         # Fermeture automatique après 10 secondes
-        self.auto_close_timer = QTimer(self)
-        self.auto_close_timer.setSingleShot(True)
-        self.auto_close_timer.timeout.connect(self._close_with_animation)
-        self.auto_close_timer.start(10000)
+        # self.auto_close_timer = QTimer(self)
+        # self.auto_close_timer.setSingleShot(True)
+        # self.auto_close_timer.timeout.connect(self._close_with_animation)
+        # self.auto_close_timer.start(10000)
     
     def _position_popup(self):
         """Positionne le popup au centre de l'écran"""
@@ -161,7 +161,7 @@ class AlertPopup(QWidget):
     
     def _close_with_animation(self):
         """Ferme le popup avec animation"""
-        self.auto_close_timer.stop()
+        # self.auto_close_timer.stop()
         
         self.fade_out = QPropertyAnimation(self, b"windowOpacity")
         self.fade_out.setDuration(200)

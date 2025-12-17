@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
         toolbar_layout = QHBoxLayout()
         
         # Bouton ajouter stratégie
-        self.add_strategy_btn = QPushButton("➕ Nouvelle Stratégie")
+        self.add_strategy_btn = QPushButton("Nouvelle Stratégie")
         self.add_strategy_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1e88e5;
@@ -324,22 +324,8 @@ class MainWindow(QMainWindow):
     
     def _play_alert_sound(self):
         """Joue un son d'alerte"""
-        import os
-        try:
-            # Chercher un fichier son personnalisé dans assets/
-            app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            custom_sound = os.path.join(app_dir, "assets", "Epee.wav")
-            
-            if os.path.exists(custom_sound):
-                # Jouer le fichier WAV personnalisé
-                winsound.PlaySound(custom_sound, winsound.SND_FILENAME | winsound.SND_ASYNC)
-            else:
-                # Fallback: bips système
-                for _ in range(3):
-                    winsound.Beep(1000, 200)  # Fréquence 1000Hz, durée 200ms
-                    winsound.Beep(1500, 200)  # Fréquence 1500Hz
-        except Exception:
-            pass  # Ignorer si le son ne fonctionne pas
+        winsound.Beep(1000, 200)  # Fréquence 1000Hz, durée 200ms
+        winsound.Beep(1500, 200)  # Fréquence 1500Hz
     
     def _show_alert_popup(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool):
         """Affiche un popup d'alerte"""
