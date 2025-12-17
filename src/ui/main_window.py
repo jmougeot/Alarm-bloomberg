@@ -488,11 +488,20 @@ class MainWindow(QMainWindow):
     
     def _play_alert_sound(self):
         """Joue un son d'alerte"""
+        import os
         try:
-            # Son Windows par défaut (3 bips)
-            for _ in range(3):
-                winsound.Beep(1000, 200)  # Fréquence 1000Hz, durée 200ms
-                winsound.Beep(1500, 200)  # Fréquence 1500Hz
+            # Chercher un fichier son personnalisé dans assets/
+            app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            custom_sound = os.path.join(app_dir, "assets", "WindowShutdown.wav")
+            
+            if os.path.exists(custom_sound):
+                # Jouer le fichier WAV personnalisé
+                winsound.PlaySound(custom_sound, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            else:
+                # Fallback: bips système
+                for _ in range(3):
+                    winsound.Beep(1000, 200)  # Fréquence 1000Hz, durée 200ms
+                    winsound.Beep(1500, 200)  # Fréquence 1500Hz
         except Exception:
             pass  # Ignorer si le son ne fonctionne pas
     
