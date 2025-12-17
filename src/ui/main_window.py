@@ -492,7 +492,7 @@ class MainWindow(QMainWindow):
         try:
             # Chercher un fichier son personnalisé dans assets/
             app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            custom_sound = os.path.join(app_dir, "assets", "WindowShutdown.wav")
+            custom_sound = os.path.join(app_dir, "assets", "Epee.wav")
             
             if os.path.exists(custom_sound):
                 # Jouer le fichier WAV personnalisé
