@@ -37,15 +37,17 @@ class PriceUpdate:
 
 
 class BloombergEventHandler:
-    """Handler d'événements Bloomberg - appelé automatiquement par blpapi"""
+    """Handler d'événements Bloomberg - doit être callable"""
     
     def __init__(self, worker: 'BloombergWorker'):
         self.worker = worker
     
-    def processEvent(self, event, session):
-        """Callback appelé par Bloomberg quand un événement arrive"""
-        self.worker._process_event(event)
-        return False  # Continue à traiter les événements
+    def __call__(self, event, session):
+        """Appelé par blpapi quand un événement arrive"""
+        try:
+            self.worker._process_event(event)
+        except Exception as e:
+            print(f"[Bloomberg] Erreur dans event handler: {e}")
 
 
 class BloombergWorker(QThread):
