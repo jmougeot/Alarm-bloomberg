@@ -3,7 +3,7 @@ Splash Screen pour Strategy Price Monitor
 """
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QApplication
 from PySide6.QtCore import Qt, QTimer, Signal, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient, QPen, QBrush
+from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient, QPen, QBrush, QPixmap
 
 
 class SplashScreen(QWidget):
@@ -28,7 +28,7 @@ class SplashScreen(QWidget):
         layout.setSpacing(15)
         
         # Titre avec icône
-        self.title_label = QLabel("📊 STRATEGY MONITOR")
+        self.title_label = QLabel(" STRATEGY MONITOR")
         self.title_label.setAlignment(Qt.AlignCenter)  # type: ignore
         self.title_label.setStyleSheet("""
             QLabel {
@@ -40,6 +40,19 @@ class SplashScreen(QWidget):
             }
         """)
         layout.addWidget(self.title_label)
+        
+        # Image Picsou
+        import os
+        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        picsou_path = os.path.join(app_dir, "assets", "picsou2.png")
+        if os.path.exists(picsou_path):
+            picsou_label = QLabel()
+            pixmap = QPixmap(picsou_path)
+            if not pixmap.isNull():
+                pixmap = pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # type: ignore
+                picsou_label.setPixmap(pixmap)
+                picsou_label.setAlignment(Qt.AlignCenter)  # type: ignore
+                layout.addWidget(picsou_label)
         
         # Sous-titre
         subtitle = QLabel("Real-Time Options Strategy Pricing")
