@@ -186,21 +186,32 @@ class SplashScreen(QWidget):
             
             # 3. Dessiner la face avant (principale)
             if cos_a > -0.95:
-                # Gradient doré
-                gradient = QRadialGradient(0, 0, radius)
-                gradient.setColorAt(0, QColor(255, 225, 50))
-                gradient.setColorAt(0.5, QColor(255, 200, 0))
-                gradient.setColorAt(1, QColor(200, 150, 0))
-                painter.setBrush(QBrush(gradient))
-                painter.setPen(QPen(QColor(180, 130, 0), 3))
-                
                 x_offset = thickness * sin_a
                 width = int(2 * radius * abs(cos_a))
+                
+                # Cercle extérieur (bordure dorée foncée)
+                outer_gradient = QRadialGradient(0, 0, radius)
+                outer_gradient.setColorAt(0, QColor(220, 170, 20))  # Centre doré moyen
+                outer_gradient.setColorAt(0.7, QColor(200, 140, 0))  # Dégradé vers foncé
+                outer_gradient.setColorAt(1, QColor(160, 100, 0))   # Bordure très foncée
+                painter.setBrush(QBrush(outer_gradient))
+                painter.setPen(QPen(QColor(140, 90, 0), 2))
                 painter.drawEllipse(x_offset - width/2, -radius, width, 2*radius)
+                
+                # Cercle intérieur (doré clair)
+                inner_radius = int(radius * 0.75)
+                inner_width = int(width * 0.75)
+                inner_gradient = QRadialGradient(0, 0, inner_radius)
+                inner_gradient.setColorAt(0, QColor(255, 240, 100))   # Centre très clair
+                inner_gradient.setColorAt(0.5, QColor(255, 220, 60))  # Doré clair
+                inner_gradient.setColorAt(1, QColor(240, 190, 30))    # Bordure claire
+                painter.setBrush(QBrush(inner_gradient))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(x_offset - inner_width/2, -inner_radius, inner_width, 2*inner_radius)
                 
                 # Symbole $ si face visible
                 if abs(cos_a) > 0.3:
-                    painter.setPen(QPen(QColor(130, 80, 0), 2))
+                    painter.setPen(QPen(QColor(140, 90, 0), 2))
                     font = QFont("Arial", max(8, int(radius * 0.8)), QFont.Bold)  # type: ignore
                     painter.setFont(font)
                     painter.drawText(-radius//2, radius//3, "$")
