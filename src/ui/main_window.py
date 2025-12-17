@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QApplication, QDialog, QGraphicsDropShadowEffect, QFrame
 )
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint
-from PySide6.QtGui import QAction, QKeySequence, QColor
+from PySide6.QtGui import QAction, QKeySequence, QColor, QPixmap
 
 from ..models.strategy import Strategy
 from ..services.bloomberg_service import BloombergService
@@ -24,9 +24,9 @@ class AlertPopup(QWidget):
     """Popup d'alerte animé quand une cible est atteinte"""
     
     def __init__(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool, parent=None):
-        super().__init__(parent, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        super().__init__(parent, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool) #type: ignore
+        self.setAttribute(Qt.WA_TranslucentBackground) #type: ignore
+        self.setAttribute(Qt.WA_DeleteOnClose) #type: ignore
         
         self._setup_ui(strategy_name, current_price, target_price, is_inferior)
         self._setup_animation()
@@ -68,8 +68,19 @@ class AlertPopup(QWidget):
                 font-weight: bold;
             }
         """)
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignCenter) #type: ignore
         container_layout.addWidget(title)
+        
+        # Image Picsou
+        import os
+        picsou_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "picsou2.webp")
+        if os.path.exists(picsou_path):
+            picsou_label = QLabel()
+            pixmap = QPixmap(picsou_path)
+            pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # type: ignore
+            picsou_label.setPixmap(pixmap)
+            picsou_label.setAlignment(Qt.AlignCenter)  # type: ignore
+            container_layout.addWidget(picsou_label)
         
         # Nom de la stratégie
         name_label = QLabel(strategy_name)
@@ -80,7 +91,7 @@ class AlertPopup(QWidget):
                 font-weight: bold;
             }
         """)
-        name_label.setAlignment(Qt.AlignCenter)
+        name_label.setAlignment(Qt.AlignCenter)#type: ignore
         container_layout.addWidget(name_label)
         
         # Prix actuel
@@ -93,7 +104,7 @@ class AlertPopup(QWidget):
                 font-weight: bold;
             }
         """)
-        price_label.setAlignment(Qt.AlignCenter)
+        price_label.setAlignment(Qt.AlignCenter) #type: ignore
         container_layout.addWidget(price_label)
         
         # Condition
@@ -108,7 +119,7 @@ class AlertPopup(QWidget):
                 font-size: 14px;
             }
         """)
-        condition_label.setAlignment(Qt.AlignCenter)
+        condition_label.setAlignment(Qt.AlignCenter) #type: ignore
         container_layout.addWidget(condition_label)
         
         # Bouton fermer
@@ -143,7 +154,7 @@ class AlertPopup(QWidget):
         self.fade_in.setDuration(300)
         self.fade_in.setStartValue(0)
         self.fade_in.setEndValue(1)
-        self.fade_in.setEasingCurve(QEasingCurve.OutCubic)
+        self.fade_in.setEasingCurve(QEasingCurve.OutCubic) #type: ignore
         
         # Fermeture automatique après 10 secondes
         self.auto_close_timer = QTimer(self)
@@ -171,7 +182,7 @@ class AlertPopup(QWidget):
         self.fade_out.setDuration(200)
         self.fade_out.setStartValue(1)
         self.fade_out.setEndValue(0)
-        self.fade_out.setEasingCurve(QEasingCurve.InCubic)
+        self.fade_out.setEasingCurve(QEasingCurve.InCubic) # type: ignore
         self.fade_out.finished.connect(self.close)
         self.fade_out.start()
 
@@ -259,7 +270,7 @@ class MainWindow(QMainWindow):
         # === Zone de scroll pour les stratégies ===
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) #type: ignore
         scroll_area.setStyleSheet("""
             QScrollArea {
                 border: none;
@@ -285,29 +296,29 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("&Fichier")
         
         new_action = QAction("&Nouveau", self)
-        new_action.setShortcut(QKeySequence.New)
+        new_action.setShortcut(QKeySequence.New) #type: ignore
         new_action.triggered.connect(self._new_workspace)
         file_menu.addAction(new_action)
         
         open_action = QAction("&Ouvrir...", self)
-        open_action.setShortcut(QKeySequence.Open)
+        open_action.setShortcut(QKeySequence.Open) #type: ignore
         open_action.triggered.connect(self._open_file)
         file_menu.addAction(open_action)
         
         save_action = QAction("&Sauvegarder", self)
-        save_action.setShortcut(QKeySequence.Save)
+        save_action.setShortcut(QKeySequence.Save) #type: ignore
         save_action.triggered.connect(self._save_file)
         file_menu.addAction(save_action)
         
         save_as_action = QAction("Sauvegarder &sous...", self)
-        save_as_action.setShortcut(QKeySequence.SaveAs)
+        save_as_action.setShortcut(QKeySequence.SaveAs) #type: ignore
         save_as_action.triggered.connect(self._save_file_as)
         file_menu.addAction(save_as_action)
         
         file_menu.addSeparator()
         
         quit_action = QAction("&Quitter", self)
-        quit_action.setShortcut(QKeySequence.Quit)
+        quit_action.setShortcut(QKeySequence.Quit) #type: ignore
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
         
@@ -465,7 +476,7 @@ class MainWindow(QMainWindow):
             self._play_alert_sound()
             
             # Afficher le popup
-            self._show_alert_popup(strategy.name, current_price, strategy.target_price, is_inferior)
+            self._show_alert_popup(strategy.name, current_price, strategy.target_price, is_inferior) #type: ignore
             
             condition_text = "inférieur" if is_inferior else "supérieur"
             self.statusbar.showMessage(
@@ -503,13 +514,13 @@ class MainWindow(QMainWindow):
     
     def _start_bloomberg_connection(self):
         """Démarre la connexion Bloomberg automatiquement"""
-        if not self.bloomberg_service.is_connected:
-            self.bloomberg_service.start()
+        if not self.bloomberg_service.is_connected: #type: ignore
+            self.bloomberg_service.start() #type: ignore
             
             # S'abonner à tous les tickers existants
             for strategy in self.strategies.values():
                 for ticker in strategy.get_all_tickers():
-                    self.bloomberg_service.subscribe(ticker)
+                    self.bloomberg_service.subscribe(ticker) #type: ignore
     
     def _on_price_updated(self, ticker: str, last: float, bid: float, ask: float):
         """Appelé quand un prix est mis à jour"""
@@ -554,12 +565,12 @@ class MainWindow(QMainWindow):
                 self,
                 "Nouveau workspace",
                 "Voulez-vous sauvegarder avant de créer un nouveau workspace?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel #type: ignore
             )
             
-            if reply == QMessageBox.Save:
+            if reply == QMessageBox.Save: #type: ignore
                 self._save_file()
-            elif reply == QMessageBox.Cancel:
+            elif reply == QMessageBox.Cancel: #type: ignore
                 return
         
         # Supprimer toutes les stratégies
@@ -665,23 +676,30 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Appelé à la fermeture de la fenêtre"""
+        # Arrêter Bloomberg en premier
         if self.bloomberg_service:
-            self.bloomberg_service.stop()
+            try:
+                self.bloomberg_service.stop()
+            except Exception:
+                pass
         
         if self.strategies:
             reply = QMessageBox.question(
                 self,
                 "Quitter",
                 "Voulez-vous sauvegarder avant de quitter?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel #type: ignore
             )
             
-            if reply == QMessageBox.Save:
+            if reply == QMessageBox.Save: #type: ignore
                 self._save_file()
                 event.accept()
-            elif reply == QMessageBox.Discard:
+            elif reply == QMessageBox.Discard: #type: ignore
                 event.accept()
             else:
                 event.ignore()
+                # Redémarrer Bloomberg si on annule
+                if not self.bloomberg_service.is_connected: #type: ignore
+                    self._start_bloomberg_connection()
         else:
             event.accept()

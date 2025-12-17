@@ -14,7 +14,7 @@ from datetime import datetime
 
 # Import blpapi avec gestion d'erreur
 try:
-    from blpapi_import_helper import blpapi
+    from blpapi_import_helper import blpapi  # type: ignore
     BLPAPI_AVAILABLE = True
 except ImportError:
     BLPAPI_AVAILABLE = False
@@ -62,8 +62,8 @@ class BloombergWorker(QThread):
         super().__init__()
         self.host = host
         self.port = port
-        self.session: Optional['blpapi.Session'] = None
-        self.subscriptions: dict[str, 'blpapi.CorrelationId'] = {}
+        self.session: Optional['blpapi.Session'] = None # type: ignore
+        self.subscriptions: dict[str, 'blpapi.CorrelationId'] = {} # type: ignore
         self.is_running = False
         self.mutex = QMutex()
         self._pending_subscriptions: list[str] = []
@@ -83,7 +83,7 @@ class BloombergWorker(QThread):
         try:
             print("[Bloomberg] Configuration de la session...")
             # Configuration de la session
-            session_options = blpapi.SessionOptions()
+            session_options = blpapi.SessionOptions() # type: ignore
             session_options.setServerHost(self.host)
             session_options.setServerPort(self.port)
             session_options.setDefaultSubscriptionService(DEFAULT_SERVICE)
@@ -91,15 +91,15 @@ class BloombergWorker(QThread):
             # Créer la session avec un event handler
             print("[Bloomberg] Création de la session...")
             handler = BloombergEventHandler(self)
-            self.session = blpapi.Session(session_options, handler)
+            self.session = blpapi.Session(session_options, handler) # type: ignore
             
             print("[Bloomberg] Démarrage de la session...")
-            if not self.session.start():
+            if not self.session.start(): # type: ignore
                 self.connection_status.emit(False, "Impossible de démarrer la session Bloomberg")
                 return
             
             print("[Bloomberg] Ouverture du service...")
-            if not self.session.openService(DEFAULT_SERVICE):
+            if not self.session.openService(DEFAULT_SERVICE):  # type: ignore
                 self.connection_status.emit(False, f"Impossible d'ouvrir {DEFAULT_SERVICE}")
                 return
             
@@ -137,29 +137,29 @@ class BloombergWorker(QThread):
         with QMutexLocker(self.mutex):
             # Nouvelles subscriptions
             if self._pending_subscriptions:
-                sub_list = blpapi.SubscriptionList()
+                sub_list = blpapi.SubscriptionList()  # type: ignore
                 for ticker in self._pending_subscriptions:
-                    corr_id = blpapi.CorrelationId(ticker)
+                    corr_id = blpapi.CorrelationId(ticker)  # type: ignore
                     sub_list.add(ticker, DEFAULT_FIELDS, [], corr_id)
                     self.subscriptions[ticker] = corr_id
                 
-                self.session.subscribe(sub_list)
+                self.session.subscribe(sub_list)  # type: ignore
                 self._pending_subscriptions.clear()
             
             # Unsubscriptions
             if self._pending_unsubscriptions:
-                unsub_list = blpapi.SubscriptionList()
+                unsub_list = blpapi.SubscriptionList()  # type: ignore
                 for ticker in self._pending_unsubscriptions:
                     if ticker in self.subscriptions:
                         unsub_list.add(ticker, DEFAULT_FIELDS, [], self.subscriptions[ticker])
                         del self.subscriptions[ticker]
                 
-                self.session.unsubscribe(unsub_list)
+                self.session.unsubscribe(unsub_list)  # type: ignore
                 self._pending_unsubscriptions.clear()
     
     def _process_event(self, event):
         """Traite un événement Bloomberg"""
-        if event.eventType() == blpapi.Event.SUBSCRIPTION_DATA:
+        if event.eventType() == blpapi.Event.SUBSCRIPTION_DATA:  # type: ignore
             for msg in event:
                 ticker = msg.correlationId().value()
                 
@@ -194,12 +194,12 @@ class BloombergWorker(QThread):
                         ask if ask is not None else -1.0
                     )
         
-        elif event.eventType() == blpapi.Event.SUBSCRIPTION_STATUS:
+        elif event.eventType() == blpapi.Event.SUBSCRIPTION_STATUS:  # type: ignore
             for msg in event:
                 ticker = msg.correlationId().value()
-                if msg.messageType() == blpapi.Names.SUBSCRIPTION_STARTED:
+                if msg.messageType() == blpapi.Names.SUBSCRIPTION_STARTED:  # type: ignore
                     self.subscription_started.emit(ticker)
-                elif msg.messageType() == blpapi.Names.SUBSCRIPTION_FAILURE:
+                elif msg.messageType() == blpapi.Names.SUBSCRIPTION_FAILURE:  # type: ignore
                     self.subscription_failed.emit(ticker, str(msg))
     
     def subscribe(self, ticker: str):
@@ -223,7 +223,10 @@ class BloombergWorker(QThread):
         self.is_running = False
         with QMutexLocker(self.mutex):
             self._condition.wakeOne()  # Réveille le thread pour qu'il se termine
-        self.wait()
+        # Attendre max 2 secondes pour que le thread se termine
+        if not self.wait(2000):
+            self.terminate()  # Forcer l'arrêt si timeout
+            self.wait(500)
 
 
 class BloombergService(QObject):

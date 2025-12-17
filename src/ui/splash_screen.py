@@ -12,8 +12,8 @@ class SplashScreen(QWidget):
     finished = Signal()
     
     def __init__(self):
-        super().__init__(None, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        super().__init__(None, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)  # type: ignore
+        self.setAttribute(Qt.WA_TranslucentBackground)  # type: ignore
         self.setFixedSize(500, 350)
         
         self._progress = 0
@@ -29,7 +29,7 @@ class SplashScreen(QWidget):
         
         # Titre avec icône
         self.title_label = QLabel("📊 STRATEGY MONITOR")
-        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignCenter)  # type: ignore
         self.title_label.setStyleSheet("""
             QLabel {
                 color: #00ff88;
@@ -43,7 +43,7 @@ class SplashScreen(QWidget):
         
         # Sous-titre
         subtitle = QLabel("Real-Time Options Strategy Pricing")
-        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setAlignment(Qt.AlignCenter)  # type: ignore
         subtitle.setStyleSheet("""
             QLabel {
                 color: #888;
@@ -68,7 +68,7 @@ class SplashScreen(QWidget):
         """
         
         logo_label = QLabel(logo_text)
-        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setAlignment(Qt.AlignCenter)  # type: ignore
         logo_label.setStyleSheet("""
             QLabel {
                 color: #00aaff;
@@ -83,7 +83,7 @@ class SplashScreen(QWidget):
         
         # Status de chargement
         self.status_label = QLabel("Initialisation...")
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignCenter)  # type: ignore
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #666;
@@ -112,7 +112,7 @@ class SplashScreen(QWidget):
         
         # Version
         version_label = QLabel("v1.0.0")
-        version_label.setAlignment(Qt.AlignCenter)
+        version_label.setAlignment(Qt.AlignCenter)  # type: ignore
         version_label.setStyleSheet("""
             QLabel {
                 color: #444;
@@ -124,7 +124,7 @@ class SplashScreen(QWidget):
     def paintEvent(self, event):
         """Dessine le fond avec dégradé"""
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.Antialiasing)  # type: ignore
         
         # Fond avec dégradé
         gradient = QLinearGradient(0, 0, 0, self.height())
