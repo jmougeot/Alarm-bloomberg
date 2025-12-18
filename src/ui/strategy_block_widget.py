@@ -38,6 +38,7 @@ class StrategyBlockWidget(QFrame):
         self.strategy = strategy
         self.leg_widgets: dict[str, OptionLegWidget] = {}
         self._was_target_reached = False  # Pour tracker l'état précédent
+        self._details_visible = True  # Les détails sont visibles par défaut
         self._setup_ui()
         self._connect_signals()
         self._load_legs()
@@ -117,9 +118,23 @@ class StrategyBlockWidget(QFrame):
             }
         """)
         header_layout.addWidget(self.action_edit)
-        header_layout.addStretch()
         
-       
+        # Bouton détails (toggle)
+        self.details_btn = QPushButton("▼ Détails")
+        self.details_btn.setFixedWidth(100)
+        self.details_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #444;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QPushButton:hover {
+                background-color: #555;
+            }
+        """)
+        header_layout.addWidget(self.details_btn)
         
         # Prix actuel de la stratégie
         header_layout.addWidget(QLabel("Prix :"))
@@ -159,10 +174,10 @@ class StrategyBlockWidget(QFrame):
         main_layout.addLayout(header_layout)
         
         # === Séparateur ===
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine) # type: ignore
-        separator.setStyleSheet("background-color: #444;")
-        main_layout.addWidget(separator)
+        # separator = QFrame()
+        # separator.setFrameShape(QFrame.HLine) # type: ignore
+        # separator.setStyleSheet("background-color: #444;")
+        # main_layout.addWidget(separator)
         
         # === Container pour les legs ===
         self.legs_container = QWidget()
@@ -172,7 +187,6 @@ class StrategyBlockWidget(QFrame):
         main_layout.addWidget(self.legs_container)
         
         # === Bouton ajouter une ligne ===
-        add_leg_layout = QHBoxLayout()
         self.add_leg_btn = QPushButton("Ajouter une option")
         self.add_leg_btn.setStyleSheet("""
             QPushButton {
@@ -189,10 +203,10 @@ class StrategyBlockWidget(QFrame):
         header_layout.addWidget(self.add_leg_btn)
         
         # === Séparateur ===
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.HLine) # type: ignore
-        separator2.setStyleSheet("background-color: #444;")
-        main_layout.addWidget(separator2)
+        # separator2 = QFrame()
+        # separator2.setFrameShape(QFrame.HLine) # type: ignore
+        # separator2.setStyleSheet("background-color: #444;")
+        # main_layout.addWidget(separator2)
         
         # === Prix et cible ===
         price_layout = QHBoxLayout()
@@ -263,8 +277,13 @@ class StrategyBlockWidget(QFrame):
             }
         """)
         price_layout.addWidget(self.status_combo)
-        price_layout.addStretch()
-        main_layout.addLayout(price_layout)
+        
+        # Créer un conteneur pour price_layout
+        self.price_container = QWidget()
+        price_container_layout = QVBoxLayout(self.price_container)
+        price_container_layout.setContentsMargins(0, 0, 0, 0)
+        price_container_layout.addLayout(price_layout)
+        main_layout.addWidget(self.price_container)
     
     def _connect_signals(self):
         """Connecte les signaux"""
@@ -276,6 +295,7 @@ class StrategyBlockWidget(QFrame):
         self.add_leg_btn.clicked.connect(self._on_add_leg)
         self.condition_combo.currentIndexChanged.connect(self._on_condition_changed)
         self.target_price_spin.valueChanged.connect(self._on_target_price_changed)
+        self.details_btn.clicked.connect(self._on_toggle_details)
     
     def _load_legs(self):
         """Charge les legs existants"""
@@ -348,6 +368,20 @@ class StrategyBlockWidget(QFrame):
         """Appelé quand l'action change"""
         self.strategy.action = self.action_edit.text().strip() or None
         self.strategy_updated.emit(self.strategy.id)
+    
+    def _on_toggle_details(self):
+        """Toggle l'affichage des détails (legs et prix)"""
+        self._details_visible = not self._details_visible
+        
+        # Afficher/masquer les sections de détails
+        self.legs_container.setVisible(self._details_visible)
+        self.price_container.setVisible(self._details_visible)
+        
+        # Changer le texte du bouton
+        if self._details_visible:
+            self.details_btn.setText("▼ Détails")
+        else:
+            self.details_btn.setText("▶ Détails")
     
     def _on_status_changed(self, index: int):
         """Appelé quand le status change"""
