@@ -62,8 +62,32 @@ class StrategyBlockWidget(QFrame):
         # === Header ===
         header_layout = QHBoxLayout()
         
+        # Client (éditable)
+        client_label = QLabel("Client:")
+        client_label.setStyleSheet("color: #888; font-size: 12px;")
+        header_layout.addWidget(client_label)
+        
+        self.client_edit = QLineEdit(self.strategy.client or "")
+        self.client_edit.setPlaceholderText("Client")
+        self.client_edit.setFixedWidth(100)
+        self.client_edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #333;
+                border: 1px solid #555;
+                color: #fff;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+        """)
+        header_layout.addWidget(self.client_edit)
+        
         # Nom de la stratégie (éditable)
+        name_label = QLabel("Stratégie:")
+        name_label.setStyleSheet("color: #888; font-size: 12px; margin-left: 10px;")
+        header_layout.addWidget(name_label)
+        
         self.name_edit = QLineEdit(self.strategy.name)
+        self.name_edit.setPlaceholderText("Ex: SFRF6 96.50/96.625/96.75 Call Fly")
         self.name_edit.setStyleSheet("""
             QLineEdit {
                 background-color: transparent;
@@ -79,6 +103,25 @@ class StrategyBlockWidget(QFrame):
             }
         """)
         header_layout.addWidget(self.name_edit)
+        
+        # Action (éditable)
+        action_label = QLabel("Action:")
+        action_label.setStyleSheet("color: #888; font-size: 12px; margin-left: 10px;")
+        header_layout.addWidget(action_label)
+        
+        self.action_edit = QLineEdit(self.strategy.action or "")
+        self.action_edit.setPlaceholderText("buy to open")
+        self.action_edit.setFixedWidth(120)
+        self.action_edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #333;
+                border: 1px solid #555;
+                color: #fff;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+        """)
+        header_layout.addWidget(self.action_edit)
         
         header_layout.addStretch()
         
@@ -234,6 +277,8 @@ class StrategyBlockWidget(QFrame):
     def _connect_signals(self):
         """Connecte les signaux"""
         self.name_edit.editingFinished.connect(self._on_name_changed)
+        self.client_edit.textChanged.connect(self._on_client_changed)
+        self.action_edit.textChanged.connect(self._on_action_changed)
         self.status_combo.currentIndexChanged.connect(self._on_status_changed)
         self.delete_strategy_btn.clicked.connect(self._on_delete_strategy)
         self.add_leg_btn.clicked.connect(self._on_add_leg)
@@ -261,8 +306,61 @@ class StrategyBlockWidget(QFrame):
             self.ticker_added.emit(leg.ticker)
     
     def _on_name_changed(self):
-        """Appelé quand le nom change"""
-        self.strategy.name = self.name_edit.text()
+        """Appelé quand le nom change - parse automatiquement si aucun leg"""
+        new_name = self.name_edit.text().strip()
+        
+        # Si aucun leg n'existe encore, essayer de parser automatiquement
+        if not self.strategy.legs and new_name:
+            self._try_auto_parse(new_name)
+        else:
+            self.strategy.name = new_name
+            self.strategy_updated.emit(self.strategy.id)
+    
+    def _try_auto_parse(self, text: str):
+        """Tente de parser automatiquement la string et créer les legs"""
+        try:
+            from name_to_strategy import str_to_strat
+            parsed_strategy = str_to_strat(text)
+            
+            if parsed_strategy and parsed_strategy.legs:
+                # Mettre à jour client et action
+                if parsed_strategy.client:
+                    self.strategy.client = parsed_strategy.client
+                    self.client_edit.setText(parsed_strategy.client)
+                
+                if parsed_strategy.action:
+                    self.strategy.action = parsed_strategy.action
+                    self.action_edit.setText(parsed_strategy.action)
+                
+                # Mettre à jour le nom (juste la stratégie sans client/action)
+                self.strategy.name = parsed_strategy.name
+                self.name_edit.setText(parsed_strategy.name)
+                
+                # Ajouter les legs
+                for leg in parsed_strategy.legs:
+                    self.strategy.legs.append(leg)
+                    self._add_leg_widget(leg)
+                
+                self.strategy_updated.emit(self.strategy.id)
+                print(f"[Auto-parse] Créé {len(parsed_strategy.legs)} legs pour '{parsed_strategy.name}'")
+            else:
+                # Parsing échoué, juste mettre à jour le nom
+                self.strategy.name = text
+                self.strategy_updated.emit(self.strategy.id)
+        except Exception as e:
+            print(f"[Auto-parse] Erreur: {e}")
+            # En cas d'erreur, juste mettre à jour le nom
+            self.strategy.name = text
+            self.strategy_updated.emit(self.strategy.id)
+    
+    def _on_client_changed(self):
+        """Appelé quand le client change"""
+        self.strategy.client = self.client_edit.text().strip() or None
+        self.strategy_updated.emit(self.strategy.id)
+    
+    def _on_action_changed(self):
+        """Appelé quand l'action change"""
+        self.strategy.action = self.action_edit.text().strip() or None
         self.strategy_updated.emit(self.strategy.id)
     
     def _on_status_changed(self, index: int):

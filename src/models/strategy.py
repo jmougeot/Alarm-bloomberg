@@ -3,6 +3,7 @@ Modèles de données pour les stratégies d'options
 """
 from dataclasses import dataclass, field
 from enum import Enum
+from http import client
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -42,7 +43,7 @@ class OptionLeg:
     mid: Optional[float] = None
     last_update: Optional[datetime] = None
     
-    def update_price(self, last_price: float = None, bid: float = None, ask: float = None):
+    def update_price(self, last_price: float, bid: float, ask: float):
         """Met à jour les prix de l'option. Ignore les valeurs négatives (pas de donnée)."""
         if last_price is not None and last_price >= 0:
             self.last_price = last_price
@@ -92,6 +93,8 @@ class Strategy:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = "Nouvelle Stratégie"
     legs: list[OptionLeg] = field(default_factory=list)
+    client : Optional[str] = None
+    action : Optional[str] = None
     
     # Prix cible et condition
     target_price: Optional[float] = None
