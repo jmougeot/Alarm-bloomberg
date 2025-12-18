@@ -44,13 +44,13 @@ STRATEGY_POSITIONS = {
 def separate_parts(info_strategy: str) -> Tuple[str, str, str]:
     """
     Sépare une ligne comme 'Avi  SFRF6 96.50/96.625/96.75 Call Fly  buy to open' en 3 parties
-    basé sur les grands espaces (2+ espaces consécutifs)
+    basé sur les tabs ou grands espaces (2+ espaces consécutifs)
     - partie 1: 'Avi'
     - partie 2: 'SFRF6 96.50/96.625/96.75 Call Fly'
     - partie 3: 'buy to open'
     """
-    # Split sur les espaces multiples (2 ou plus)
-    parts = re.split(r'\s{3,}', info_strategy.strip())
+    # Split sur les tabs ou espaces multiples (2 ou plus)
+    parts = re.split(r'\t+|\s{2,}', info_strategy.strip())
     
     # Si une seule partie, la mettre dans parts[1] (stratégie)
     if len(parts) == 1:
@@ -96,7 +96,6 @@ def detect_vs(strategy_str: str) -> Tuple[str, Optional[str]]:
             return parts[0].strip(), parts[1].strip()
     
     return strategy_str, None
-
 
 def extract_strikes(strategy_str: str) -> List[float]:
     """Extraction avancée des strikes - gère tous les formats et conversions Bloomberg"""
