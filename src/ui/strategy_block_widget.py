@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
-
 from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition
 from .option_leg_widget import OptionLegWidget
 
@@ -119,22 +118,6 @@ class StrategyBlockWidget(QFrame):
         """)
         header_layout.addWidget(self.action_edit)
         
-        # Bouton détails (toggle)
-        self.details_btn = QPushButton("▼ Détails")
-        self.details_btn.setFixedWidth(100)
-        self.details_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #444;
-                color: #fff;
-                border: none;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QPushButton:hover {
-                background-color: #555;
-            }
-        """)
-        header_layout.addWidget(self.details_btn)
         
         # Prix actuel de la stratégie
         header_layout.addWidget(QLabel("Prix :"))
@@ -170,14 +153,30 @@ class StrategyBlockWidget(QFrame):
             }
         """)
         header_layout.addWidget(self.delete_strategy_btn)
-        
+
+        # Bouton détails (toggle)
+        self.details_btn = QPushButton("▼")
+        self.details_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #444;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 4px;
+            }
+            QPushButton:hover {
+                background-color: #555;
+            }
+        """)
+        header_layout.addWidget(self.details_btn)
+
         main_layout.addLayout(header_layout)
         
-        # === Séparateur ===
-        # separator = QFrame()
-        # separator.setFrameShape(QFrame.HLine) # type: ignore
-        # separator.setStyleSheet("background-color: #444;")
-        # main_layout.addWidget(separator)
+        # === Séparateur avant les détails ===
+        self.separator_before_details = QFrame()
+        self.separator_before_details.setFrameShape(QFrame.HLine) # type: ignore
+        self.separator_before_details.setStyleSheet("background-color: #444;")
+        main_layout.addWidget(self.separator_before_details)
         
         # === Container pour les legs ===
         self.legs_container = QWidget()
@@ -200,18 +199,9 @@ class StrategyBlockWidget(QFrame):
                 background-color: #3d7a37;
             }
         """)
-        header_layout.addWidget(self.add_leg_btn)
-        
-        # === Séparateur ===
-        # separator2 = QFrame()
-        # separator2.setFrameShape(QFrame.HLine) # type: ignore
-        # separator2.setStyleSheet("background-color: #444;")
-        # main_layout.addWidget(separator2)
-        
+
         # === Prix et cible ===
         price_layout = QHBoxLayout()
-        
- 
         
         # Condition (inférieur/supérieur)
         price_layout.addWidget(QLabel("Alarme si:"))
@@ -257,6 +247,7 @@ class StrategyBlockWidget(QFrame):
         self.target_indicator.setStyleSheet("color: #666; font-size: 20px;")
         self.target_indicator.setToolTip("Cible non définie")
         price_layout.addWidget(self.target_indicator)
+        price_layout.addWidget(self.add_leg_btn)
 
          # Status
         self.status_combo = QComboBox()
@@ -282,6 +273,13 @@ class StrategyBlockWidget(QFrame):
         self.price_container = QWidget()
         price_container_layout = QVBoxLayout(self.price_container)
         price_container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # === Séparateur avant la section prix ===
+        self.separator_before_price = QFrame()
+        self.separator_before_price.setFrameShape(QFrame.HLine) # type: ignore
+        self.separator_before_price.setStyleSheet("background-color: #444;")
+        price_container_layout.addWidget(self.separator_before_price)
+        
         price_container_layout.addLayout(price_layout)
         main_layout.addWidget(self.price_container)
     
@@ -329,6 +327,17 @@ class StrategyBlockWidget(QFrame):
             parsed_strategy = str_to_strat(text)
             
             if parsed_strategy and parsed_strategy.legs:
+                # Supprimer tous les legs existants d'abord
+                for leg in list(self.strategy.legs):
+                    if leg.ticker:
+                        self.ticker_removed.emit(leg.ticker)
+                    if leg.id in self.leg_widgets:
+                        widget = self.leg_widgets.pop(leg.id)
+                        self.legs_layout.removeWidget(widget)
+                        widget.deleteLater()
+                
+                self.strategy.legs.clear()
+                
                 # Mettre à jour client et action
                 if parsed_strategy.client:
                     self.strategy.client = parsed_strategy.client
@@ -342,7 +351,7 @@ class StrategyBlockWidget(QFrame):
                 self.strategy.name = parsed_strategy.name
                 self.name_edit.setText(parsed_strategy.name)
                 
-                # Ajouter les legs
+                # Ajouter les nouveaux legs
                 for leg in parsed_strategy.legs:
                     self.strategy.legs.append(leg)
                     self._add_leg_widget(leg)
@@ -374,14 +383,15 @@ class StrategyBlockWidget(QFrame):
         self._details_visible = not self._details_visible
         
         # Afficher/masquer les sections de détails
+        self.separator_before_details.setVisible(self._details_visible)
         self.legs_container.setVisible(self._details_visible)
         self.price_container.setVisible(self._details_visible)
         
         # Changer le texte du bouton
         if self._details_visible:
-            self.details_btn.setText("▼ Détails")
+            self.details_btn.setText("▼")
         else:
-            self.details_btn.setText("▶ Détails")
+            self.details_btn.setText("▶")
     
     def _on_status_changed(self, index: int):
         """Appelé quand le status change"""
