@@ -240,7 +240,7 @@ class SplashScreen(QWidget):
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_progress)
-        self.timer.start(500)
+        self.timer.start(40)
     
     def _update_progress(self):
         """Met à jour la progression"""
@@ -251,7 +251,6 @@ class SplashScreen(QWidget):
             self.current_step += 1
         else:
             self.timer.stop()
-            # Petit délai avant de fermer
             QTimer.singleShot(500, self._finish)
     
     def _finish(self):

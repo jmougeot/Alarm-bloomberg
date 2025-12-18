@@ -29,8 +29,8 @@ STRATEGY_POSITIONS = {
     "broken_put_fly": [("long", 1), ("short", 2), ("long", 1)],
     "call_condor": [("long", 1), ("short", 1), ("short", 1), ("long", 1)],
     "put_condor": [("long", 1), ("short", 1), ("short", 1), ("long", 1)],
-    "call_spread": [("short", 1), ("long", 1)],
-    "put_spread": [("long", 1), ("short", 1)],
+    "call_spread": [("long", 1), ("short", 1)],
+    "put_spread": [("short", 1), ("long", 1)],
     "call_strangle": [("long", 1), ("long", 1)],
     "put_strangle": [("long", 1), ("long", 1)],
     "call_straddle": [("long", 1), ("long", 1)],
@@ -78,6 +78,25 @@ def convert_strike_decimal(strike_str: str) -> float:
         return float(integer_part + "." + Strike[decimal_part])
     else:
         return float(strike_str)
+    
+def detect_vs(strategy_str: str) -> Tuple[str, Optional[str]]:
+    """
+    Détecte si la stratégie contient 'vs' et split en deux parties
+    Ex: 'SFRF6 96.50/96.75 Call Fly vs SFRF6 97.00 Call'
+    Returns: ('SFRF6 96.50/96.75 Call Fly', 'SFRF6 97.00 Call')
+    Ou: ('SFRF6 96.50/96.75 Call Fly', None) si pas de vs
+    """
+    # Pattern pour détecter "vs" entouré d'espaces
+    vs_pattern = r'\s+vs\s+|\s+VS\s+'
+    
+    if re.search(vs_pattern, strategy_str, re.IGNORECASE):
+        # Split sur vs
+        parts = re.split(vs_pattern, strategy_str, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) == 2:
+            return parts[0].strip(), parts[1].strip()
+    
+    return strategy_str, None
+
 
 def extract_strikes(strategy_str: str) -> List[float]:
     """Extraction avancée des strikes - gère tous les formats et conversions Bloomberg"""
@@ -170,6 +189,39 @@ def extract_strikes(strategy_str: str) -> List[float]:
                             strikes.append(strike)
                     except:
                         pass
+        elif len(first) == 4:
+            # Format collé 4 chiffres: 9712/9737/9750 ou 9540/50/60/70
+            base = first[:2]
+
+            if all(len(p) == 4 for p in parts):
+                # Tous 4 chiffres: 9712/9737/9750
+                for part in parts:
+                    try:
+                        full_str = part[:2] + "." + part[2:]
+                        strike = convert_strike_decimal(full_str)
+                        if 50 < strike < 200:
+                            strikes.append(strike)
+                    except:
+                        pass
+            else:
+                # Format mixte: 9540/50/60/70
+                try:
+                    full_str = first[:2] + "." + first[2:]
+                    strike = convert_strike_decimal(full_str)
+                    if 50 < strike < 200:
+                        strikes.append(strike)
+                except:
+                    pass
+                for part in parts[1:]:
+                    if len(part) == 2:
+                        try:
+                            full_str = base + "." + part
+                            strike = convert_strike_decimal(full_str)
+                            if 50 < strike < 200:
+                                strikes.append(strike)
+                        except:
+                            pass
+
 
     # Si pas de séquence trouvée, extraction simple
     if not strikes:
@@ -221,10 +273,10 @@ def detect_strategy_type(strategy_str: str, num_strikes: int) -> Tuple[str, str]
             return f"broken_{option_type}_fly", option_type
         return f"{option_type}_condor", option_type
     
-    elif "straddle" or "^"in strategy_lower:
+    elif "straddle" in strategy_lower or "^" in strategy_lower:
         # Straddle: même strike pour call et put
         return f"{option_type}_straddle", option_type
-    elif "strangle" or "^^" in strategy_lower:
+    elif "strangle" in strategy_lower or "^^" in strategy_lower:
         return f"{option_type}_strangle", option_type
     
     elif "ladder" in strategy_lower:
@@ -243,30 +295,9 @@ def detect_strategy_type(strategy_str: str, num_strikes: int) -> Tuple[str, str]
         return f"{option_type}_condor", option_type
 
     return "unknown", option_type
-
-def str_to_strat(info_strategy : str) -> Optional[Strategy]:
-    """
-    Convertit une string de stratégie en objet Strategy
-    Ex: 'Avi  SFRF6 96.50/96.625/96.75 Call Fly  buy to open'
-    """
+    
+def str_to_leg(match, opt_type, strategy_type, strikes) :
     Legs : List[OptionLeg] = []
-    client, name, action = separate_parts(info_strategy)
-    
-    # Si pas de nom de stratégie, retourner None
-    if not name:
-        return None
-    
-    strikes = extract_strikes(name)
-    strategy_type, opt_type = detect_strategy_type(name, len(strikes))
-
-    # Extraire underlying et expiry
-    pattern = r"\b([A-Z]{2,4})([FGHJKMNQUVXZ]\d)\b"
-    match = re.search(pattern, name, re.IGNORECASE)
-    
-    # Si pas de match, impossible de créer les tickers
-    if not match:
-        return None
-    
     underlying = match.group(1).upper()
     expiry = match.group(2).upper()
     
@@ -287,7 +318,58 @@ def str_to_strat(info_strategy : str) -> Optional[Strategy]:
         
         Leg_i = OptionLeg(ticker=ticker, position=position, quantity=quantity)
         Legs.append(Leg_i)
+    return Legs
+
+
+def str_to_strat(info_strategy : str) -> Optional[Strategy]:
+    """
+    Convertit une string de stratégie en objet Strategy
+    Ex: 'Avi  SFRF6 96.50/96.625/96.75 Call Fly  buy to open'
+    """
+
+    client, name, action = separate_parts(info_strategy)
     
+    # Si pas de nom de stratégie, retourner None
+    if not name:
+        return None
+    
+    # Détecter si on a un "vs" (deux stratégies)
+    part1, part2 = detect_vs(name)
+    
+    # Traiter la première partie
+    strikes1 = extract_strikes(part1)
+    strategy_type1, opt_type1 = detect_strategy_type(part1, len(strikes1))  # FIXÉ: utiliser part1
+
+    # Extraire underlying et expiry de la première partie
+    pattern = r"\b([A-Z]{2,4})([FGHJKMNQUVXZ]\d)\b"
+    match1 = re.search(pattern, part1, re.IGNORECASE)  # FIXÉ: utiliser part1
+    
+    # Si pas de match, impossible de créer les tickers
+    if not match1:
+        return None
+    
+    Legs = str_to_leg(match1, opt_type1, strategy_type1, strikes1)
+
+    # Traiter la deuxième partie si elle existe
+    if part2 is not None : 
+        strikes2 = extract_strikes(part2)
+        strategy_type2, opt_type2 = detect_strategy_type(part2, len(strikes2))  # FIXÉ: utiliser part2
+        
+        # Chercher underlying/expiry dans part2, sinon réutiliser match1
+        match2 = re.search(pattern, part2, re.IGNORECASE)
+        if not match2:
+            match2 = match1  # Réutiliser le même underlying/expiry
+        
+        Legs2 = str_to_leg(match2, opt_type2, strategy_type2, strikes2)
+        # Inverser les positions de la deuxième stratégie (après "vs")
+        for leg in Legs2: 
+            if leg.position == Position.LONG:
+                leg.position = Position.SHORT
+            else: 
+                leg.position = Position.LONG
+        Legs.extend(Legs2)
+
+
     # Créer la stratégie
     strategy = Strategy(
         name=name,

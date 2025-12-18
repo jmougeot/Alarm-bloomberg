@@ -119,26 +119,27 @@ class StrategyBlockWidget(QFrame):
         header_layout.addWidget(self.action_edit)
         header_layout.addStretch()
         
-        # Status
-        self.status_combo = QComboBox()
-        self.status_combo.addItem("En cours", StrategyStatus.EN_COURS)
-        self.status_combo.addItem("Fait", StrategyStatus.FAIT)
-        self.status_combo.addItem("Annulé", StrategyStatus.ANNULE)
-        self.status_combo.setCurrentIndex(
-            self.status_combo.findData(self.strategy.status)
-        )
-        self.status_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #333;
-                color: #fff;
-                border: 1px solid #555;
-                border-radius: 4px;
+       
+        
+        # Prix actuel de la stratégie
+        header_layout.addWidget(QLabel("Prix :"))
+        self.current_price_label = QLabel("--")
+        self.current_price_label.setStyleSheet("""
+            QLabel {
+                background-color: #1a1a2e;
+                color: #00ff88;
+                border: 2px solid #00aa55;
+                border-radius: 6px;
                 padding: 4px 8px;
-                min-width: 120px;
+                font-weight: bold;
+                font-family: 'Consolas', monospace;
             }
         """)
-        header_layout.addWidget(self.status_combo)
-        
+
+        self.current_price_label.setMinimumWidth(150)
+        self.current_price_label.setAlignment(Qt.AlignCenter) # type: ignore
+        header_layout.addWidget(self.current_price_label)
+
         # Bouton supprimer la stratégie
         self.delete_strategy_btn = QPushButton("Supprimer")
         self.delete_strategy_btn.setStyleSheet("""
@@ -147,7 +148,7 @@ class StrategyBlockWidget(QFrame):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 6px 12px;
+                padding: 4px 8px;
             }
             QPushButton:hover {
                 background-color: #a00000;
@@ -179,15 +180,13 @@ class StrategyBlockWidget(QFrame):
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 8px 16px;
+                padding: 4px 8px;
             }
             QPushButton:hover {
                 background-color: #3d7a37;
             }
         """)
-        add_leg_layout.addWidget(self.add_leg_btn)
-        add_leg_layout.addStretch()
-        main_layout.addLayout(add_leg_layout)
+        header_layout.addWidget(self.add_leg_btn)
         
         # === Séparateur ===
         separator2 = QFrame()
@@ -198,26 +197,7 @@ class StrategyBlockWidget(QFrame):
         # === Prix et cible ===
         price_layout = QHBoxLayout()
         
-        # Prix actuel de la stratégie
-        price_layout.addWidget(QLabel("Prix mid actuel:"))
-        self.current_price_label = QLabel("--")
-        self.current_price_label.setStyleSheet("""
-            QLabel {
-                background-color: #1a1a2e;
-                color: #00ff88;
-                border: 2px solid #00aa55;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 18px;
-                font-weight: bold;
-                font-family: 'Consolas', monospace;
-            }
-        """)
-        self.current_price_label.setMinimumWidth(150)
-        self.current_price_label.setAlignment(Qt.AlignCenter) # type: ignore
-        price_layout.addWidget(self.current_price_label)
-        
-        price_layout.addSpacing(30)
+ 
         
         # Condition (inférieur/supérieur)
         price_layout.addWidget(QLabel("Alarme si:"))
@@ -225,8 +205,7 @@ class StrategyBlockWidget(QFrame):
         self.condition_combo.addItem("Inférieur à", TargetCondition.INFERIEUR)
         self.condition_combo.addItem("Supérieur à", TargetCondition.SUPERIEUR)
         self.condition_combo.setCurrentIndex(
-            self.condition_combo.findData(self.strategy.target_condition)
-        )
+            self.condition_combo.findData(self.strategy.target_condition))
         self.condition_combo.setStyleSheet("""
             QComboBox {
                 background-color: #333;
@@ -264,7 +243,26 @@ class StrategyBlockWidget(QFrame):
         self.target_indicator.setStyleSheet("color: #666; font-size: 20px;")
         self.target_indicator.setToolTip("Cible non définie")
         price_layout.addWidget(self.target_indicator)
-        
+
+         # Status
+        self.status_combo = QComboBox()
+        self.status_combo.addItem("En cours", StrategyStatus.EN_COURS)
+        self.status_combo.addItem("Fait", StrategyStatus.FAIT)
+        self.status_combo.addItem("Annulé", StrategyStatus.ANNULE)
+        self.status_combo.setCurrentIndex(
+            self.status_combo.findData(self.strategy.status)
+        )
+        self.status_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #333;
+                color: #fff;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 4px 8px;
+                min-width: 120px;
+            }
+        """)
+        price_layout.addWidget(self.status_combo)
         price_layout.addStretch()
         main_layout.addLayout(price_layout)
     
