@@ -213,7 +213,7 @@ def str_to_strat(info_strategy : str) -> Optional[Strategy]:
         if i >= len(signs):
             break
             
-        ticker = f"{underlying}{expiry} {strike}{opt_type_code} Comdty"
+        ticker = f"{underlying}{expiry}{opt_type_code} {strike} Comdty"
         position = Position.LONG if signs[i][0] == "long" else Position.SHORT
         quantity = signs[i][1]
         

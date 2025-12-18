@@ -90,16 +90,11 @@ class StrategyBlockWidget(QFrame):
         self.name_edit.setPlaceholderText("Ex: SFRF6 96.50/96.625/96.75 Call Fly")
         self.name_edit.setStyleSheet("""
             QLineEdit {
-                background-color: transparent;
-                border: none;
-                color: #fff;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QLineEdit:focus {
                 background-color: #333;
-                border: 1px solid #666;
+                border: 1px solid #555;
+                color: #fff;
                 border-radius: 4px;
+                padding: 4px 8px;
             }
         """)
         header_layout.addWidget(self.name_edit)
@@ -122,7 +117,6 @@ class StrategyBlockWidget(QFrame):
             }
         """)
         header_layout.addWidget(self.action_edit)
-        
         header_layout.addStretch()
         
         # Status
