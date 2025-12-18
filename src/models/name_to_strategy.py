@@ -4,7 +4,22 @@ Script complet pour parser Trade_monitor.csv et construire des StrategyCompariso
 
 import re
 from typing import List, Tuple, Optional
-from src.models.strategy import Strategy, OptionLeg, Position 
+from src.models.strategy import Strategy, OptionLeg, Position
+
+Strike = {
+"06" : "0625", 
+"12" : "125",
+"18" : "1875",
+"31" : "3125",
+"37" : "375",
+"43" : "4375",
+"56" : "5625",
+"60"  : "625",
+"68" : "6875",
+"81" : "8125",
+"87" :"875",
+"93": "9375",
+}
 
 def separate_parts(info_strategy: str) -> Tuple[str, str, str]:
     """
@@ -27,8 +42,25 @@ def separate_parts(info_strategy: str) -> Tuple[str, str, str]:
     
     return parts[0], parts[1], parts[2]
 
+def convert_strike_decimal(strike_str: str) -> float:
+    """Convertit un strike arrondi en strike Bloomberg complet
+    Ex: 98.06 -> 98.0625, 98.12 -> 98.125
+    """
+    if "." not in strike_str:
+        return float(strike_str)
+    
+    parts = strike_str.split(".")
+    integer_part = parts[0]
+    decimal_part = parts[1] if len(parts) > 1 else ""
+    
+    # Si la partie décimale est dans le dictionnaire Strike, la remplacer
+    if decimal_part in Strike:
+        return float(integer_part + "." + Strike[decimal_part])
+    else:
+        return float(strike_str)
+
 def extract_strikes(strategy_str: str) -> List[float]:
-    """Extraction avancée des strikes - gère tous les formats"""
+    """Extraction avancée des strikes - gère tous les formats et conversions Bloomberg"""
     strikes = []
 
     # Nettoyer: retirer codes produit au début (ERJ4, SFRM4, etc.)
@@ -47,9 +79,9 @@ def extract_strikes(strategy_str: str) -> List[float]:
             # Format avec décimales: 106.4/106.8/107 ou 95.06/12/18
             base = first.split(".")[0]
 
-            # Premier élément
+            # Premier élément - appliquer conversion
             try:
-                strike = float(first)
+                strike = convert_strike_decimal(first)
                 if 50 < strike < 200:
                     strikes.append(strike)
             except:
@@ -60,15 +92,16 @@ def extract_strikes(strategy_str: str) -> List[float]:
                 if "." in part:
                     # Décimale complète: 106.8, 95.125
                     try:
-                        strike = float(part)
+                        strike = convert_strike_decimal(part)
                         if 50 < strike < 200:
                             strikes.append(strike)
                     except:
                         pass
                 elif len(part) <= 2:
-                    # Suffixe 2 chiffres: "12" → 95.12
+                    # Suffixe 2 chiffres: "12" → 95.125 (avec conversion)
                     try:
-                        strike = float(base + "." + part)
+                        full_str = base + "." + part
+                        strike = convert_strike_decimal(full_str)
                         if 50 < strike < 200:
                             strikes.append(strike)
                     except:
@@ -84,7 +117,8 @@ def extract_strikes(strategy_str: str) -> List[float]:
                 else:
                     # 4+ chiffres: format collé "9712"
                     try:
-                        strike = float(part[:2] + "." + part[2:])
+                        full_str = part[:2] + "." + part[2:]
+                        strike = convert_strike_decimal(full_str)
                         if 50 < strike < 200:
                             strikes.append(strike)
                     except:
@@ -103,14 +137,15 @@ def extract_strikes(strategy_str: str) -> List[float]:
             for part in parts[1:]:
                 if "." in part:
                     try:
-                        strike = float(part)
+                        strike = convert_strike_decimal(part)
                         if 50 < strike < 200:
                             strikes.append(strike)
                     except:
                         pass
                 elif len(part) <= 2:
                     try:
-                        strike = float(base + "." + part)
+                        full_str = base + "." + part
+                        strike = convert_strike_decimal(full_str)
                         if 50 < strike < 200:
                             strikes.append(strike)
                     except:
@@ -122,7 +157,7 @@ def extract_strikes(strategy_str: str) -> List[float]:
         matches = re.findall(simple_pattern, cleaned_str)
         for match in matches:
             try:
-                strike = float(match)
+                strike = convert_strike_decimal(match)
                 if 50 < strike < 200:
                     strikes.append(strike)
             except:

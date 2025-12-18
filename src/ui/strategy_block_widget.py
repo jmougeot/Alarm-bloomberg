@@ -313,7 +313,7 @@ class StrategyBlockWidget(QFrame):
     def _try_auto_parse(self, text: str):
         """Tente de parser automatiquement la string et créer les legs"""
         try:
-            from name_to_strategy import str_to_strat
+            from src.models.name_to_strategy import str_to_strat
             parsed_strategy = str_to_strat(text)
             
             if parsed_strategy and parsed_strategy.legs:
