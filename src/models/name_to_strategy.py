@@ -21,6 +21,26 @@ Strike = {
 "93": "9375",
 }
 
+# Positions par type de stratégie: (position, quantité)
+STRATEGY_POSITIONS = {
+    "call_fly": [("long", 1), ("short", 2), ("long", 1)],
+    "put_fly": [("long", 1), ("short", 2), ("long", 1)],
+    "broken_call_fly": [("long", 1), ("short", 2), ("long", 1)],
+    "broken_put_fly": [("long", 1), ("short", 2), ("long", 1)],
+    "call_condor": [("long", 1), ("short", 1), ("short", 1), ("long", 1)],
+    "put_condor": [("long", 1), ("short", 1), ("short", 1), ("long", 1)],
+    "call_spread": [("short", 1), ("long", 1)],
+    "put_spread": [("long", 1), ("short", 1)],
+    "call_strangle": [("long", 1), ("long", 1)],
+    "put_strangle": [("long", 1), ("long", 1)],
+    "call_straddle": [("long", 1), ("long", 1)],
+    "put_straddle": [("long", 1), ("long", 1)],
+    "call_ladder": [("long", 1), ("short", 1), ("short", 1)],
+    "put_ladder": [("long", 1), ("short", 1), ("short", 1)],
+}
+
+
+
 def separate_parts(info_strategy: str) -> Tuple[str, str, str]:
     """
     Sépare une ligne comme 'Avi  SFRF6 96.50/96.625/96.75 Call Fly  buy to open' en 3 parties
@@ -167,11 +187,17 @@ def extract_strikes(strategy_str: str) -> List[float]:
     return sorted(list(strikes))
 
 def detect_strategy_type(strategy_str: str, num_strikes: int) -> Tuple[str, str]:
-    """Détection simple du type de stratégie"""
+    """Détection avancée du type de stratégie avec support straddle/strangle"""
     strategy_lower = strategy_str.lower()
 
-    # Déterminer si call ou put
-    if "put" in strategy_lower or " p " in strategy_lower or " ps" in strategy_lower:
+    # Déterminer si call ou put (peut être mixte pour straddle/strangle)
+    is_put = "put" in strategy_lower or " p " in strategy_lower or " ps" in strategy_lower
+    is_call = "call" in strategy_lower or " c " in strategy_lower or " cs" in strategy_lower
+    
+    # Si ni call ni put explicite, défaut = call
+    if not is_put and not is_call:
+        option_type = "call"
+    elif is_put and not is_call:
         option_type = "put"
     else:
         option_type = "call"
@@ -185,13 +211,31 @@ def detect_strategy_type(strategy_str: str, num_strikes: int) -> Tuple[str, str]
         ):
             return f"broken_{option_type}_fly", option_type
         return f"{option_type}_fly", option_type
+    
     elif "condor" in strategy_lower:
+        if (
+            "broken" in strategy_lower
+            or "brk" in strategy_lower
+            or "bkn" in strategy_lower
+        ):
+            return f"broken_{option_type}_fly", option_type
         return f"{option_type}_condor", option_type
+    
+    elif "straddle" or "^"in strategy_lower:
+        # Straddle: même strike pour call et put
+        return f"{option_type}_straddle", option_type
+    elif "strangle" or "^^" in strategy_lower:
+        return f"{option_type}_strangle", option_type
+    
+    elif "ladder" in strategy_lower:
+        return f"{option_type}_ladder", option_type
+    
     elif (
         "spread" in strategy_lower or " cs" in strategy_lower or " ps" in strategy_lower
     ):
         return f"{option_type}_spread", option_type
     elif num_strikes == 2:
+
         return f"{option_type}_spread", option_type
     elif num_strikes == 3:
         return f"{option_type}_fly", option_type
@@ -229,19 +273,8 @@ def str_to_strat(info_strategy : str) -> Optional[Strategy]:
     # Convertir call/put en C/P pour Bloomberg
     opt_type_code = "C" if opt_type == "call" else "P"
 
-    # Définir les signes selon le type de stratégie
-    if "fly" in strategy_type and len(strikes) == 3:
-        # Fly: +strike1 -2×strike2 +strike3
-        signs = [("long",1), ("short",2), ("long",1)]
-    elif "condor" in strategy_type and len(strikes) == 4:
-        # Condor: +strike1 -strike2 -strike3 +strike4
-        signs = [("long",1), ("short",1), ("short",1), ("long",1)]
-    elif "spread" in strategy_type and len(strikes) == 2:
-        # Spread: +strike1 -strike2
-        signs = [("long", 1), ("short", 1)]
-    else: 
-        # Par défaut: tous long avec quantité 1
-        signs = [("long", 1)] * len(strikes)
+    # Récupérer les positions depuis le dictionnaire
+    signs = STRATEGY_POSITIONS.get(strategy_type, [("long", 1)] * len(strikes))
 
     # Créer les legs
     for i, strike in enumerate(strikes):

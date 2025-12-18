@@ -302,13 +302,7 @@ class StrategyBlockWidget(QFrame):
     def _on_name_changed(self):
         """Appelé quand le nom change - parse automatiquement si aucun leg"""
         new_name = self.name_edit.text().strip()
-        
-        # Si aucun leg n'existe encore, essayer de parser automatiquement
-        if not self.strategy.legs and new_name:
-            self._try_auto_parse(new_name)
-        else:
-            self.strategy.name = new_name
-            self.strategy_updated.emit(self.strategy.id)
+        self._try_auto_parse(new_name)
     
     def _try_auto_parse(self, text: str):
         """Tente de parser automatiquement la string et créer les legs"""
