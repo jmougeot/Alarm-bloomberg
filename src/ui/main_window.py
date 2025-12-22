@@ -269,6 +269,15 @@ class MainWindow(QMainWindow):
             self._remove_page(page_id)
             self.statusbar.showMessage(f"Page '{page_name}' supprimée", 3000)
     
+    def _subscribe_all_tickers(self):
+        """S'abonne à tous les tickers de toutes les stratégies"""
+        if self.bloomberg_service and self.bloomberg_service.is_connected:
+            for page in self.pages.values():
+                for ticker in page.get_all_tickers():
+                    if ticker:
+                        self.bloomberg_service.subscribe(ticker)
+            self.statusbar.showMessage("Tous les tickers abonnés", 2000)
+    
     def _on_ticker_added(self, ticker: str):
         """Appelé quand un ticker est ajouté"""
         if self.bloomberg_service and self.bloomberg_service.is_connected:
@@ -377,3 +386,6 @@ class MainWindow(QMainWindow):
                 for strategy_data in page_data.get('strategies', []):
                     strategy = Strategy.from_dict(strategy_data)
                     page_widget.add_strategy(strategy)
+        
+        # Forcer l'abonnement de tous les tickers après chargement
+        self._subscribe_all_tickers()

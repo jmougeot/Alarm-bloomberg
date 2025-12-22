@@ -49,6 +49,8 @@ class BloombergHandler:
                     padding: 8px;
                 }
             """)
+            # S'abonner à tous les tickers existants quand la connexion est établie
+            self.window._subscribe_all_tickers()
         else:
             self.window.connection_label.setText(f"🔴 {message}")
             self.window.connection_label.setStyleSheet("""
