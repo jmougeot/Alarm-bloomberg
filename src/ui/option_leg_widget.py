@@ -122,12 +122,15 @@ class OptionLegWidget(QWidget):
     
     def _on_ticker_changed(self):
         """Appelé quand le ticker change"""
-        new_ticker = self.ticker_edit.text().strip()
+        new_ticker = self.ticker_edit.text().strip().upper()
         
         # Ajouter automatiquement " Comdty" si pas déjà présent
-        if new_ticker and not new_ticker.endswith(" Comdty"):
+        if new_ticker and not new_ticker.upper().endswith(" COMDTY"):
             new_ticker = new_ticker + " Comdty"
-            self.ticker_edit.setText(new_ticker)
+        
+        # Normaliser le ticker (majuscules pour cohérence avec Bloomberg)
+        new_ticker = new_ticker.upper()
+        self.ticker_edit.setText(new_ticker)
         
         if new_ticker != self.leg.ticker:
             old_ticker = self.leg.ticker

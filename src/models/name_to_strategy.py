@@ -15,6 +15,7 @@ Strike = {
 "43" : "4375",
 "56" : "5625",
 "60"  : "625",
+"62" : "625",
 "68" : "6875",
 "81" : "8125",
 "87" :"875",
@@ -310,8 +311,9 @@ def str_to_leg(match, opt_type, strategy_type, strikes) :
     for i, strike in enumerate(strikes):
         if i >= len(signs):
             break
-            
-        ticker = f"{underlying}{expiry}{opt_type_code} {strike} Comdty"
+        
+        # Ticker normalisé en MAJUSCULES pour cohérence avec Bloomberg
+        ticker = f"{underlying}{expiry}{opt_type_code} {strike} COMDTY"
         position = Position.LONG if signs[i][0] == "long" else Position.SHORT
         quantity = signs[i][1]
         

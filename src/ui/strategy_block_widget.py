@@ -495,12 +495,16 @@ class StrategyBlockWidget(QFrame):
         # Normaliser le ticker pour la comparaison (strip + upper)
         ticker_normalized = ticker.strip().upper()
         
+        updated = False
         for leg_id, widget in self.leg_widgets.items():
             widget_ticker = widget.ticker.strip().upper() if widget.ticker else ""
             if widget_ticker == ticker_normalized:
                 widget.update_price(last_price, bid, ask)
+                updated = True
         
-        self._update_strategy_price()
+        # Mettre à jour le prix de la stratégie seulement si un leg a été mis à jour
+        if updated:
+            self._update_strategy_price()
     
     def _update_strategy_price(self):
         """Met à jour le prix total de la stratégie"""

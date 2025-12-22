@@ -79,9 +79,13 @@ class OptionLeg:
     @classmethod
     def from_dict(cls, data: dict) -> "OptionLeg":
         """Crée depuis un dictionnaire"""
+        # Normaliser le ticker en majuscules pour cohérence avec Bloomberg
+        ticker = data.get("ticker", "")
+        if ticker:
+            ticker = ticker.strip().upper()
         return cls(
             id=data.get("id", str(uuid.uuid4())),
-            ticker=data.get("ticker", ""),
+            ticker=ticker,
             position=Position(data.get("position", "long")),
             quantity=data.get("quantity", 1)
         )
