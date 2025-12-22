@@ -1,16 +1,11 @@
 """
 Fenêtre principale de l'application Strategy Monitor
 """
-import json
-import winsound
-from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QScrollArea, QLabel, QStatusBar,
-    QMenuBar, QMenu, QFileDialog, QMessageBox,
-    QApplication
+    QPushButton, QScrollArea, QLabel, QStatusBar, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
@@ -18,7 +13,19 @@ from PySide6.QtGui import QAction, QKeySequence
 from ..models.strategy import Strategy
 from ..services.bloomberg_service import BloombergService
 from .strategy_block_widget import StrategyBlockWidget
-from .alert_popup import AlertPopup
+from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler
+from .styles.dark_theme import (
+    DARK_THEME_STYLESHEET, 
+    BUTTON_PRIMARY_STYLE, 
+    CONNECTION_LABEL_DISCONNECTED,
+    SCROLL_AREA_STYLE
+)
+
+if TYPE_CHECKING:
+    from ..handlers.file_handler import FileHandler
+    from ..handlers.alert_handler import AlertHandler
+    from ..handlers.bloomberg_handler import BloombergHandler
+    from ..handlers.strategy_handler import StrategyHandler
 
 
 class MainWindow(QMainWindow):
@@ -27,20 +34,33 @@ class MainWindow(QMainWindow):
     Permet d'ajouter/supprimer des blocs de stratégies en permanence.
     """
     
+    # Déclaration des types pour Pylance
+    file_handler: 'FileHandler'
+    alert_handler: 'AlertHandler'
+    bloomberg_handler: 'BloombergHandler'
+    strategy_handler: 'StrategyHandler'
+    
     def __init__(self):
         super().__init__()
         
+        # État
         self.strategies: dict[str, Strategy] = {}
         self.strategy_widgets: dict[str, StrategyBlockWidget] = {}
         self.bloomberg_service: Optional[BloombergService] = None
         self.current_file: Optional[str] = None
-        self._alerted_strategies: set[str] = set()  # Stratégies déjà alertées
-        self._bloomberg_started = False  # Pour éviter de démarrer plusieurs fois
+        self._bloomberg_started = False
         
+        # Handlers
+        self.file_handler = FileHandler(self)
+        self.alert_handler = AlertHandler(self)
+        self.bloomberg_handler = BloombergHandler(self)
+        self.strategy_handler = StrategyHandler(self)
+        
+        # Setup
         self._setup_ui()
         self._setup_menu()
         self._setup_statusbar()
-        self._setup_bloomberg()
+        self.bloomberg_handler.setup_bloomberg()
         self._apply_dark_theme()
     
     def showEvent(self, event):
@@ -48,8 +68,7 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         if not self._bloomberg_started:
             self._bloomberg_started = True
-            # Petit délai pour laisser l'UI se charger
-            QTimer.singleShot(500, self._start_bloomberg_connection)
+            QTimer.singleShot(500, self.bloomberg_handler.start_connection)
     
     def _setup_ui(self):
         """Configure l'interface utilisateur"""
@@ -69,34 +88,15 @@ class MainWindow(QMainWindow):
         
         # Bouton ajouter stratégie
         self.add_strategy_btn = QPushButton("Nouvelle Stratégie")
-        self.add_strategy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1e88e5;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 12px 24px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2196f3;
-            }
-        """)
-        self.add_strategy_btn.clicked.connect(self._add_new_strategy)
+        self.add_strategy_btn.setStyleSheet(BUTTON_PRIMARY_STYLE)
+        self.add_strategy_btn.clicked.connect(self.strategy_handler.add_new_strategy)
         toolbar_layout.addWidget(self.add_strategy_btn)
         
         toolbar_layout.addStretch()
         
         # Indicateur de connexion Bloomberg
         self.connection_label = QLabel("⚫ Déconnecté")
-        self.connection_label.setStyleSheet("""
-            QLabel {
-                color: #888;
-                font-size: 12px;
-                padding: 8px;
-            }
-        """)
+        self.connection_label.setStyleSheet(CONNECTION_LABEL_DISCONNECTED)
         toolbar_layout.addWidget(self.connection_label)
         
         main_layout.addLayout(toolbar_layout)
@@ -104,20 +104,15 @@ class MainWindow(QMainWindow):
         # === Zone de scroll pour les stratégies ===
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) #type: ignore
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: #121212;
-            }
-        """)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # type: ignore
+        scroll_area.setStyleSheet(SCROLL_AREA_STYLE)
         
         # Container pour les blocs de stratégies
         self.strategies_container = QWidget()
         self.strategies_layout = QVBoxLayout(self.strategies_container)
-        self.strategies_layout.setContentsMargins(5, 5, 5, 5)
-        self.strategies_layout.setSpacing(15)
-        self.strategies_layout.addStretch()  # Pousse les blocs vers le haut
+        self.strategies_layout.setContentsMargins(0, 0, 0, 0)
+        self.strategies_layout.setSpacing(0)
+        self.strategies_layout.addStretch()
         
         scroll_area.setWidget(self.strategies_container)
         main_layout.addWidget(scroll_area)
@@ -130,29 +125,29 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("&Fichier")
         
         new_action = QAction("&Nouveau", self)
-        new_action.setShortcut(QKeySequence.New) #type: ignore
-        new_action.triggered.connect(self._new_workspace)
+        new_action.setShortcut(QKeySequence.New)  # type: ignore
+        new_action.triggered.connect(self.file_handler.new_workspace)
         file_menu.addAction(new_action)
         
         open_action = QAction("&Ouvrir...", self)
-        open_action.setShortcut(QKeySequence.Open) #type: ignore
-        open_action.triggered.connect(self._open_file)
+        open_action.setShortcut(QKeySequence.Open)  # type: ignore
+        open_action.triggered.connect(self.file_handler.open_file)
         file_menu.addAction(open_action)
         
         save_action = QAction("&Sauvegarder", self)
-        save_action.setShortcut(QKeySequence.Save) #type: ignore
-        save_action.triggered.connect(self._save_file)
+        save_action.setShortcut(QKeySequence.Save)  # type: ignore
+        save_action.triggered.connect(self.file_handler.save_file)
         file_menu.addAction(save_action)
         
         save_as_action = QAction("Sauvegarder &sous...", self)
-        save_as_action.setShortcut(QKeySequence.SaveAs) #type: ignore
-        save_as_action.triggered.connect(self._save_file_as)
+        save_as_action.setShortcut(QKeySequence.SaveAs)  # type: ignore
+        save_as_action.triggered.connect(self.file_handler.save_file_as)
         file_menu.addAction(save_as_action)
         
         file_menu.addSeparator()
         
         quit_action = QAction("&Quitter", self)
-        quit_action.setShortcut(QKeySequence.Quit) #type: ignore
+        quit_action.setShortcut(QKeySequence.Quit)  # type: ignore
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
         
@@ -161,7 +156,7 @@ class MainWindow(QMainWindow):
         
         add_strategy_action = QAction("&Ajouter une stratégie", self)
         add_strategy_action.setShortcut("Ctrl+Shift+N")
-        add_strategy_action.triggered.connect(self._add_new_strategy)
+        add_strategy_action.triggered.connect(self.strategy_handler.add_new_strategy)
         strategy_menu.addAction(add_strategy_action)
         
         # Menu Aide
@@ -177,311 +172,9 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusbar)
         self.statusbar.showMessage("Prêt")
     
-    def _setup_bloomberg(self):
-        """Configure le service Bloomberg"""
-        self.bloomberg_service = BloombergService()
-        self.bloomberg_service.price_updated.connect(self._on_price_updated)
-        self.bloomberg_service.connection_status.connect(self._on_connection_status)
-        self.bloomberg_service.subscription_started.connect(self._on_subscription_started)
-        self.bloomberg_service.subscription_failed.connect(self._on_subscription_failed)
-    
     def _apply_dark_theme(self):
         """Applique le thème sombre"""
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #121212;
-            }
-            QMenuBar {
-                background-color: #1e1e1e;
-                color: #fff;
-            }
-            QMenuBar::item:selected {
-                background-color: #333;
-            }
-            QMenu {
-                background-color: #1e1e1e;
-                color: #fff;
-                border: 1px solid #333;
-            }
-            QMenu::item:selected {
-                background-color: #333;
-            }
-            QStatusBar {
-                background-color: #1e1e1e;
-                color: #888;
-            }
-            QLabel {
-                color: #fff;
-            }
-            QScrollBar:vertical {
-                background-color: #1e1e1e;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #444;
-                border-radius: 6px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #555;
-            }
-        """)
-    
-    def _add_new_strategy(self):
-        """Ajoute un nouveau bloc de stratégie"""
-        strategy = Strategy(name=f"Stratégie {len(self.strategies) + 1}")
-        self._add_strategy_widget(strategy)
-        self.statusbar.showMessage(f"Stratégie '{strategy.name}' créée", 3000)
-    
-    def _add_strategy_widget(self, strategy: Strategy):
-        """Ajoute un widget de stratégie"""
-        self.strategies[strategy.id] = strategy
-        
-        widget = StrategyBlockWidget(strategy)
-        widget.strategy_deleted.connect(self._on_strategy_deleted)
-        widget.strategy_updated.connect(self._on_strategy_updated)
-        widget.ticker_added.connect(self._on_ticker_added)
-        widget.ticker_removed.connect(self._on_ticker_removed)
-        widget.target_reached.connect(self._on_target_reached)
-        widget.target_left.connect(self._on_target_left)
-        
-        self.strategy_widgets[strategy.id] = widget
-        
-        # Insérer avant le stretch
-        self.strategies_layout.insertWidget(
-            self.strategies_layout.count() - 1, 
-            widget
-        )
-        
-        # S'abonner aux tickers existants
-        if self.bloomberg_service and self.bloomberg_service.is_connected:
-            for ticker in strategy.get_all_tickers():
-                self.bloomberg_service.subscribe(ticker)
-    
-    def _on_strategy_deleted(self, strategy_id: str):
-        """Appelé quand une stratégie est supprimée"""
-        if strategy_id in self.strategy_widgets:
-            widget = self.strategy_widgets.pop(strategy_id)
-            self.strategies_layout.removeWidget(widget)
-            widget.deleteLater()
-        
-        if strategy_id in self.strategies:
-            strategy = self.strategies.pop(strategy_id)
-            self.statusbar.showMessage(f"Stratégie '{strategy.name}' supprimée", 3000)
-    
-    def _on_strategy_updated(self, strategy_id: str):
-        """Appelé quand une stratégie est mise à jour"""
-        # Pour le moment, on ne fait rien de spécial
-        pass
-    
-    def _on_ticker_added(self, ticker: str):
-        """Appelé quand un ticker est ajouté"""
-        if self.bloomberg_service and self.bloomberg_service.is_connected:
-            self.bloomberg_service.subscribe(ticker)
-            self.statusbar.showMessage(f"Abonné à {ticker}", 2000)
-    
-    def _on_ticker_removed(self, ticker: str):
-        """Appelé quand un ticker est supprimé"""
-        # Vérifier si le ticker est encore utilisé ailleurs
-        ticker_still_used = any(
-            ticker in strategy.get_all_tickers()
-            for strategy in self.strategies.values()
-        )
-        
-        if not ticker_still_used and self.bloomberg_service:
-            self.bloomberg_service.unsubscribe(ticker)
-    
-    def _on_target_reached(self, strategy_id: str):
-        """Événement déclenché quand une cible est atteinte"""
-        # Éviter de spammer les alertes
-        if strategy_id in self._alerted_strategies:
-            return
-        
-        if strategy_id in self.strategies:
-            strategy = self.strategies[strategy_id]
-            self._alerted_strategies.add(strategy_id)
-            
-            current_price = strategy.calculate_strategy_price()
-            from ..models.strategy import TargetCondition
-            is_inferior = strategy.target_condition == TargetCondition.INFERIEUR
-            
-            # Jouer le son d'alerte
-            self._play_alert_sound()
-            
-            # Afficher le popup
-            self._show_alert_popup(strategy.name, current_price, strategy.target_price, is_inferior) #type: ignore
-            
-            condition_text = "inférieur" if is_inferior else "supérieur"
-            self.statusbar.showMessage(
-                f"🚨 ALARME! '{strategy.name}' - Prix {condition_text} à {strategy.target_price:.4f}!", 
-                5000
-            )
-    
-    def _on_target_left(self, strategy_id: str):
-        """Appelé quand le prix sort de la zone cible"""
-        self._alerted_strategies.discard(strategy_id)
-    
-    def _play_alert_sound(self):
-        """Joue un son d'alerte"""
-        winsound.Beep(1000, 200)  # Fréquence 1000Hz, durée 200ms
-        winsound.Beep(1500, 200)  # Fréquence 1500Hz
-    
-    def _show_alert_popup(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool):
-        """Affiche un popup d'alerte"""
-        popup = AlertPopup(strategy_name, current_price, target_price, is_inferior, self)
-        popup.show()
-    
-    def _start_bloomberg_connection(self):
-        """Démarre la connexion Bloomberg automatiquement"""
-        if not self.bloomberg_service.is_connected: #type: ignore
-            self.bloomberg_service.start() #type: ignore
-            
-            # S'abonner à tous les tickers existants
-            for strategy in self.strategies.values():
-                for ticker in strategy.get_all_tickers():
-                    self.bloomberg_service.subscribe(ticker) #type: ignore
-    
-    def _on_price_updated(self, ticker: str, last: float, bid: float, ask: float):
-        """Appelé quand un prix est mis à jour"""
-        for widget in self.strategy_widgets.values():
-            widget.update_price(ticker, last, bid, ask)
-    
-    def _on_connection_status(self, connected: bool, message: str):
-        """Appelé quand le status de connexion change"""
-        if connected:
-            self.connection_label.setText(f"🟢 {message}")
-            self.connection_label.setStyleSheet("""
-                QLabel {
-                    color: #00ff00;
-                    font-size: 12px;
-                    padding: 8px;
-                }
-            """)
-        else:
-            self.connection_label.setText(f"🔴 {message}")
-            self.connection_label.setStyleSheet("""
-                QLabel {
-                    color: #ff4444;
-                    font-size: 12px;
-                    padding: 8px;
-                }
-            """)
-        
-        self.statusbar.showMessage(message, 5000)
-    
-    def _on_subscription_started(self, ticker: str):
-        """Appelé quand une subscription démarre"""
-        self.statusbar.showMessage(f"✓ Subscription active: {ticker}", 2000)
-    
-    def _on_subscription_failed(self, ticker: str, error: str):
-        """Appelé quand une subscription échoue"""
-        self.statusbar.showMessage(f"✗ Échec subscription {ticker}: {error}", 5000)
-    
-    def _new_workspace(self):
-        """Crée un nouveau workspace"""
-        if self.strategies:
-            reply = QMessageBox.question(
-                self,
-                "Nouveau workspace",
-                "Voulez-vous sauvegarder avant de créer un nouveau workspace?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel #type: ignore
-            )
-            
-            if reply == QMessageBox.Save: #type: ignore
-                self._save_file()
-            elif reply == QMessageBox.Cancel: #type: ignore
-                return
-        
-        # Supprimer toutes les stratégies
-        for strategy_id in list(self.strategy_widgets.keys()):
-            self._on_strategy_deleted(strategy_id)
-        
-        self.current_file = None
-        self.setWindowTitle("Strategy Price Monitor")
-        self.statusbar.showMessage("Nouveau workspace créé", 3000)
-    
-    def _open_file(self):
-        """Ouvre un fichier de sauvegarde"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Ouvrir des stratégies",
-            "",
-            "JSON Files (*.json);;All Files (*)"
-        )
-        
-        if not file_path:
-            return
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # Supprimer les stratégies actuelles
-            for strategy_id in list(self.strategy_widgets.keys()):
-                self._on_strategy_deleted(strategy_id)
-            
-            # Charger les nouvelles stratégies
-            for strategy_data in data.get('strategies', []):
-                strategy = Strategy.from_dict(strategy_data)
-                self._add_strategy_widget(strategy)
-            
-            self.current_file = file_path
-            self.setWindowTitle(f"Strategy Price Monitor - {Path(file_path).name}")
-            self.statusbar.showMessage(f"Fichier chargé: {file_path}", 3000)
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Erreur",
-                f"Impossible de charger le fichier:\n{str(e)}"
-            )
-    
-    def _save_file(self):
-        """Sauvegarde les stratégies"""
-        if not self.current_file:
-            self._save_file_as()
-            return
-        
-        self._save_to_file(self.current_file)
-    
-    def _save_file_as(self):
-        """Sauvegarde sous un nouveau nom"""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Sauvegarder les stratégies",
-            "",
-            "JSON Files (*.json);;All Files (*)"
-        )
-        
-        if file_path:
-            if not file_path.endswith('.json'):
-                file_path += '.json'
-            self._save_to_file(file_path)
-            self.current_file = file_path
-            self.setWindowTitle(f"Strategy Price Monitor - {Path(file_path).name}")
-    
-    def _save_to_file(self, file_path: str):
-        """Sauvegarde dans un fichier"""
-        try:
-            data = {
-                'strategies': [
-                    strategy.to_dict() 
-                    for strategy in self.strategies.values()
-                ]
-            }
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            
-            self.statusbar.showMessage(f"Sauvegardé: {file_path}", 3000)
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Erreur",
-                f"Impossible de sauvegarder:\n{str(e)}"
-            )
+        self.setStyleSheet(DARK_THEME_STYLESHEET)
     
     def _show_about(self):
         """Affiche la boîte de dialogue À propos"""
@@ -508,18 +201,18 @@ class MainWindow(QMainWindow):
                 self,
                 "Quitter",
                 "Voulez-vous sauvegarder avant de quitter?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel #type: ignore
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel  # type: ignore
             )
             
-            if reply == QMessageBox.Save: #type: ignore
-                self._save_file()
+            if reply == QMessageBox.Save:  # type: ignore
+                self.file_handler.save_file()
                 event.accept()
-            elif reply == QMessageBox.Discard: #type: ignore
+            elif reply == QMessageBox.Discard:  # type: ignore
                 event.accept()
             else:
                 event.ignore()
                 # Redémarrer Bloomberg si on annule
-                if not self.bloomberg_service.is_connected: #type: ignore
-                    self._start_bloomberg_connection()
+                if self.bloomberg_service and not self.bloomberg_service.is_connected:
+                    self.bloomberg_handler.start_connection()
         else:
             event.accept()

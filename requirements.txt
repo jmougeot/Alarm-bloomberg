@@ -9,6 +9,7 @@ pyqtgraph>=0.13.0
 # Utilitaires
 numpy>=1.24.0
 
+winsound
 # Bloomberg API (installer séparément depuis Bloomberg SDK)
 # pip install --index-url=https://bcms.bloomberg.com/pip/simple blpapi
 # ou
