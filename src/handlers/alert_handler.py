@@ -22,7 +22,7 @@ class AlertHandler:
     
     def on_target_reached(self, strategy_id: str):
         """Événement déclenché quand une cible est atteinte"""
-        from ..models.strategy import TargetCondition
+        from ..models.strategy import TargetCondition, StrategyStatus
         
         # Éviter de spammer les alertes
         if strategy_id in self._alerted_strategies:
@@ -35,11 +35,27 @@ class AlertHandler:
             current_price = strategy.calculate_strategy_price()
             is_inferior = strategy.target_condition == TargetCondition.INFERIEUR
             
+            # Désactiver automatiquement l'alarme (passer le status à "Fait")
+            strategy.status = StrategyStatus.FAIT
+            
+            # Mettre à jour le widget correspondant
+            if strategy_id in self.window.strategy_widgets:
+                widget = self.window.strategy_widgets[strategy_id]
+                widget.status_combo.setCurrentIndex(
+                    widget.status_combo.findData(StrategyStatus.FAIT)
+                )
+            
             # Jouer le son d'alerte
             self.play_alert_sound()
             
-            # Afficher le popup
-            self.show_alert_popup(strategy.name, current_price, strategy.target_price, is_inferior)  # type: ignore
+            # Afficher le popup avec callback pour continuer l'alarme
+            self.show_alert_popup(
+                strategy.name, 
+                current_price, 
+                strategy.target_price,  # type: ignore
+                is_inferior,
+                strategy_id
+            )
             
             condition_text = "inférieur" if is_inferior else "supérieur"
             self.window.statusbar.showMessage(
@@ -65,8 +81,36 @@ class AlertHandler:
             except Exception:
                 pass  # Silencieusement ignorer les erreurs audio
     
-    def show_alert_popup(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool):
+    def show_alert_popup(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool, strategy_id: str = None):
         """Affiche un popup d'alerte"""
         from ..ui.alert_popup import AlertPopup
-        popup = AlertPopup(strategy_name, current_price, target_price, is_inferior, self.window)
+        popup = AlertPopup(
+            strategy_name, 
+            current_price, 
+            target_price, 
+            is_inferior,
+            strategy_id=strategy_id,
+            continue_callback=self._on_continue_alarm,
+            parent=self.window
+        )
         popup.show()
+    
+    def _on_continue_alarm(self, strategy_id: str):
+        """Callback appelé quand l'utilisateur veut continuer l'alarme"""
+        from ..models.strategy import StrategyStatus
+        
+        if strategy_id in self.window.strategies:
+            strategy = self.window.strategies[strategy_id]
+            
+            # Réactiver l'alarme (remettre le status à "En cours")
+            strategy.status = StrategyStatus.EN_COURS
+            
+            # Mettre à jour le widget correspondant
+            if strategy_id in self.window.strategy_widgets:
+                widget = self.window.strategy_widgets[strategy_id]
+                widget.status_combo.setCurrentIndex(
+                    widget.status_combo.findData(StrategyStatus.EN_COURS)
+                )
+            
+            # Retirer de la liste des stratégies alertées pour permettre une nouvelle alerte
+            self._alerted_strategies.discard(strategy_id)

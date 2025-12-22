@@ -2,7 +2,7 @@
 Popup d'alerte pour les stratégies
 """
 import os
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QFrame, QApplication, QGraphicsDropShadowEffect
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QApplication, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QPixmap
 
@@ -10,10 +10,14 @@ from PySide6.QtGui import QColor, QPixmap
 class AlertPopup(QWidget):
     """Popup d'alerte animé quand une cible est atteinte"""
     
-    def __init__(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool, parent=None):
+    def __init__(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool, 
+                 strategy_id: str = None, continue_callback=None, parent=None):
         super().__init__(parent, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool) # type: ignore
         self.setAttribute(Qt.WA_TranslucentBackground) # type: ignore
         self.setAttribute(Qt.WA_DeleteOnClose) # type: ignore
+        
+        self.strategy_id = strategy_id
+        self.continue_callback = continue_callback
         
         self._setup_ui(strategy_name, current_price, target_price, is_inferior)
         self._setup_animation()
@@ -107,6 +111,10 @@ class AlertPopup(QWidget):
         condition_label.setAlignment(Qt.AlignCenter) # type: ignore
         container_layout.addWidget(condition_label)
         
+        # Boutons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(10)
+        
         # Bouton fermer
         close_btn = QPushButton("✓ OK")
         close_btn.setStyleSheet("""
@@ -124,7 +132,28 @@ class AlertPopup(QWidget):
             }
         """)
         close_btn.clicked.connect(self._close_with_animation)
-        container_layout.addWidget(close_btn, alignment=Qt.AlignCenter) # type: ignore
+        buttons_layout.addWidget(close_btn)
+        
+        # Bouton continuer l'alarme
+        continue_btn = QPushButton("🔔 Continuer l'alarme")
+        continue_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #aa6600;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #cc7700;
+            }
+        """)
+        continue_btn.clicked.connect(self._continue_alarm)
+        buttons_layout.addWidget(continue_btn)
+        
+        container_layout.addLayout(buttons_layout)
         
         layout.addWidget(container)
         
@@ -170,3 +199,9 @@ class AlertPopup(QWidget):
         self.fade_out.setEasingCurve(QEasingCurve.InCubic) # type: ignore
         self.fade_out.finished.connect(self.close)
         self.fade_out.start()
+    
+    def _continue_alarm(self):
+        """Continue l'alarme et ferme le popup"""
+        if self.continue_callback and self.strategy_id:
+            self.continue_callback(self.strategy_id)
+        self._close_with_animation()
