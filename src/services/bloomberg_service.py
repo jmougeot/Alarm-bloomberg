@@ -4,6 +4,7 @@ Utilise les signaux Qt pour communiquer avec l'interface graphique.
 """
 import sys
 import os
+import re
 
 # Ajouter le chemin du module bloomberg
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bloomberg'))
@@ -24,6 +25,29 @@ except ImportError:
 
 DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK"]
 DEFAULT_SERVICE = "//blp/mktdata"
+
+
+def normalize_ticker_bloomberg(ticker: str) -> str:
+    """
+    Normalise un ticker pour Bloomberg.
+    - Majuscules
+    - Corrige les fautes de frappe courantes
+    - Supprime les espaces superflus
+    """
+    if not ticker:
+        return ""
+    
+    ticker = ticker.strip().upper()
+    
+    # Corriger les variantes de "COMDTY"
+    ticker = re.sub(r'\bCOMDITY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
+    ticker = re.sub(r'\bCOMODITY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
+    ticker = re.sub(r'\bCOMDTY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
+    
+    # Normaliser les espaces multiples
+    ticker = re.sub(r'\s+', ' ', ticker)
+    
+    return ticker
 
 
 class PriceUpdate:
@@ -113,10 +137,10 @@ class BloombergWorker(QThread):
                 self._process_pending_operations()
                 
                 # Attendre qu'une nouvelle subscription soit demandée
-                # ou timeout de 100ms pour vérifier is_running
+                # ou timeout de 50ms pour traiter rapidement
                 with QMutexLocker(self.mutex):
                     if not self._pending_subscriptions and not self._pending_unsubscriptions:
-                        self._condition.wait(self.mutex, 100)
+                        self._condition.wait(self.mutex, 50)
             
             print("[Bloomberg] Arrêt du worker")
             
@@ -140,10 +164,13 @@ class BloombergWorker(QThread):
                 sub_list = blpapi.SubscriptionList()  # type: ignore
                 for ticker in self._pending_subscriptions:
                     corr_id = blpapi.CorrelationId(ticker)  # type: ignore
+                    # Ajouter avec options pour recevoir les prix plus rapidement
                     sub_list.add(ticker, DEFAULT_FIELDS, [], corr_id)
                     self.subscriptions[ticker] = corr_id
+                    print(f"[Bloomberg] Subscribing to: {ticker}")
                 
                 self.session.subscribe(sub_list)  # type: ignore
+                print(f"[Bloomberg] Subscribed to {len(self._pending_subscriptions)} tickers")
                 self._pending_subscriptions.clear()
             
             # Unsubscriptions
@@ -187,6 +214,7 @@ class BloombergWorker(QThread):
                 
                 # Émettre seulement si on a au moins une valeur
                 if last_price is not None or bid is not None or ask is not None:
+                    print(f"[Bloomberg] Price update for {ticker}: last={last_price}, bid={bid}, ask={ask}")
                     self.price_updated.emit(
                         ticker,
                         last_price if last_price is not None else -1.0,  # -1 = pas de valeur
@@ -272,7 +300,7 @@ class BloombergService(QObject):
     
     def subscribe(self, ticker: str):
         """Subscribe à un ticker"""
-        ticker = ticker.strip().upper() if ticker else ""
+        ticker = normalize_ticker_bloomberg(ticker)
         if not ticker or ticker in self._active_subscriptions:
             return
         
@@ -282,7 +310,7 @@ class BloombergService(QObject):
     
     def unsubscribe(self, ticker: str):
         """Unsubscribe d'un ticker"""
-        ticker = ticker.strip().upper() if ticker else ""
+        ticker = normalize_ticker_bloomberg(ticker)
         if ticker not in self._active_subscriptions:
             return
         

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
-from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition
+from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition, normalize_ticker
 from .option_leg_widget import OptionLegWidget
 
 
@@ -492,15 +492,20 @@ class StrategyBlockWidget(QFrame):
     
     def update_price(self, ticker: str, last_price: float, bid: float, ask: float):
         """Met à jour le prix d'un ticker"""
-        # Normaliser le ticker pour la comparaison (strip + upper)
-        ticker_normalized = ticker.strip().upper()
+        # Normaliser le ticker pour la comparaison
+        ticker_normalized = normalize_ticker(ticker)
         
         updated = False
         for leg_id, widget in self.leg_widgets.items():
-            widget_ticker = widget.ticker.strip().upper() if widget.ticker else ""
+            widget_ticker = normalize_ticker(widget.ticker) if widget.ticker else ""
             if widget_ticker == ticker_normalized:
                 widget.update_price(last_price, bid, ask)
                 updated = True
+            # Debug: afficher les tickers comparés si pas de match
+            # (décommenter pour débugger)
+            # else:
+            #     if widget_ticker:
+            #         print(f"[Debug] No match: '{widget_ticker}' != '{ticker_normalized}'")
         
         # Mettre à jour le prix de la stratégie seulement si un leg a été mis à jour
         if updated:

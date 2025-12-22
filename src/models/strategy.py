@@ -7,6 +7,31 @@ from http import client
 from typing import Optional
 from datetime import datetime
 import uuid
+import re
+
+
+def normalize_ticker(ticker: str) -> str:
+    """
+    Normalise un ticker Bloomberg pour garantir la cohérence.
+    - Convertit en majuscules
+    - Corrige les variantes courantes (Comdity -> COMDTY, Comdty -> COMDTY)
+    - Supprime les espaces superflus
+    """
+    if not ticker:
+        return ""
+    
+    ticker = ticker.strip().upper()
+    
+    # Corriger les variantes de "COMDTY"
+    # Remplacer COMDITY, COMDTY, CMDTY, etc. par COMDTY
+    ticker = re.sub(r'\bCOMDITY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
+    ticker = re.sub(r'\bCOMODITY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
+    ticker = re.sub(r'\bCOMDTY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
+    
+    # Normaliser les espaces multiples en un seul
+    ticker = re.sub(r'\s+', ' ', ticker)
+    
+    return ticker
 
 
 class Position(Enum):
@@ -79,10 +104,8 @@ class OptionLeg:
     @classmethod
     def from_dict(cls, data: dict) -> "OptionLeg":
         """Crée depuis un dictionnaire"""
-        # Normaliser le ticker en majuscules pour cohérence avec Bloomberg
-        ticker = data.get("ticker", "")
-        if ticker:
-            ticker = ticker.strip().upper()
+        # Normaliser le ticker pour cohérence avec Bloomberg
+        ticker = normalize_ticker(data.get("ticker", ""))
         return cls(
             id=data.get("id", str(uuid.uuid4())),
             ticker=ticker,
