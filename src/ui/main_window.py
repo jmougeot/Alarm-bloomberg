@@ -5,21 +5,19 @@ from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QScrollArea, QLabel, QStatusBar, QMessageBox
+    QLabel, QStatusBar, QMessageBox, QStackedWidget
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QKeySequence
 
+from ..models.page import Page
 from ..models.strategy import Strategy
 from ..services.bloomberg_service import BloombergService
+from .sidebar_widget import SidebarWidget
+from .page_widget import PageWidget
 from .strategy_block_widget import StrategyBlockWidget
 from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler
-from .styles.dark_theme import (
-    DARK_THEME_STYLESHEET, 
-    BUTTON_PRIMARY_STYLE, 
-    CONNECTION_LABEL_DISCONNECTED,
-    SCROLL_AREA_STYLE
-)
+from .styles.dark_theme import DARK_THEME_STYLESHEET
 
 if TYPE_CHECKING:
     from ..handlers.file_handler import FileHandler
@@ -31,7 +29,7 @@ if TYPE_CHECKING:
 class MainWindow(QMainWindow):
     """
     Fenêtre principale de l'application.
-    Permet d'ajouter/supprimer des blocs de stratégies en permanence.
+    Gère plusieurs pages de stratégies via une sidebar.
     """
     
     # Déclaration des types pour Pylance
@@ -43,12 +41,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        # État
-        self.strategies: dict[str, Strategy] = {}
-        self.strategy_widgets: dict[str, StrategyBlockWidget] = {}
+        # État global
+        self.pages: dict[str, PageWidget] = {}
+        self.current_page_id: Optional[str] = None
         self.bloomberg_service: Optional[BloombergService] = None
         self.current_file: Optional[str] = None
         self._bloomberg_started = False
+        
+        # Propriétés de compatibilité pour les handlers
+        self._strategies_cache: dict[str, Strategy] = {}
+        self._strategy_widgets_cache: dict[str, StrategyBlockWidget] = {}
         
         # Handlers
         self.file_handler = FileHandler(self)
@@ -62,9 +64,35 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self.bloomberg_handler.setup_bloomberg()
         self._apply_dark_theme()
+        
+        # Créer une page par défaut
+        self._create_default_page()
+    
+    @property
+    def strategies(self) -> dict[str, Strategy]:
+        """Retourne toutes les stratégies de toutes les pages"""
+        all_strategies = {}
+        for page in self.pages.values():
+            all_strategies.update(page.strategies)
+        return all_strategies
+    
+    @property
+    def strategy_widgets(self) -> dict[str, StrategyBlockWidget]:
+        """Retourne tous les widgets de stratégies"""
+        all_widgets = {}
+        for page in self.pages.values():
+            all_widgets.update(page.strategy_widgets)
+        return all_widgets
+    
+    @property
+    def strategies_layout(self):
+        """Retourne le layout de la page courante (compatibilité)"""
+        if self.current_page_id and self.current_page_id in self.pages:
+            return self.pages[self.current_page_id].strategies_layout
+        return None
     
     def showEvent(self, event):
-        """Appelé quand la fenêtre est affichée - démarre Bloomberg automatiquement"""
+        """Appelé quand la fenêtre est affichée"""
         super().showEvent(event)
         if not self._bloomberg_started:
             self._bloomberg_started = True
@@ -73,49 +101,35 @@ class MainWindow(QMainWindow):
     def _setup_ui(self):
         """Configure l'interface utilisateur"""
         self.setWindowTitle("Strategy Price Monitor")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(1400, 900)
         
         # Widget central
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # === Toolbar ===
-        toolbar_layout = QHBoxLayout()
+        # === Sidebar ===
+        self.sidebar = SidebarWidget()
+        self.sidebar.page_selected.connect(self._on_page_selected)
+        self.sidebar.page_added.connect(self._on_page_added)
+        self.sidebar.page_renamed.connect(self._on_page_renamed)
+        self.sidebar.page_deleted.connect(self._on_page_deleted)
+        main_layout.addWidget(self.sidebar)
         
-        # Bouton ajouter stratégie
-        self.add_strategy_btn = QPushButton("Nouvelle Stratégie")
-        self.add_strategy_btn.setStyleSheet(BUTTON_PRIMARY_STYLE)
-        self.add_strategy_btn.clicked.connect(self.strategy_handler.add_new_strategy)
-        toolbar_layout.addWidget(self.add_strategy_btn)
+        # === Zone de contenu (pages empilées) ===
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
         
-        toolbar_layout.addStretch()
+        # Stack de pages
+        self.page_stack = QStackedWidget()
+        content_layout.addWidget(self.page_stack)
         
-        # Indicateur de connexion Bloomberg
-        self.connection_label = QLabel("⚫ Déconnecté")
-        self.connection_label.setStyleSheet(CONNECTION_LABEL_DISCONNECTED)
-        toolbar_layout.addWidget(self.connection_label)
-        
-        main_layout.addLayout(toolbar_layout)
-        
-        # === Zone de scroll pour les stratégies ===
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # type: ignore
-        scroll_area.setStyleSheet(SCROLL_AREA_STYLE)
-        
-        # Container pour les blocs de stratégies
-        self.strategies_container = QWidget()
-        self.strategies_layout = QVBoxLayout(self.strategies_container)
-        self.strategies_layout.setContentsMargins(0, 0, 0, 0)
-        self.strategies_layout.setSpacing(0)
-        self.strategies_layout.addStretch()
-        
-        scroll_area.setWidget(self.strategies_container)
-        main_layout.addWidget(scroll_area)
+        main_layout.addWidget(content_widget)
     
     def _setup_menu(self):
         """Configure la barre de menu"""
@@ -124,7 +138,7 @@ class MainWindow(QMainWindow):
         # Menu Fichier
         file_menu = menubar.addMenu("&Fichier")
         
-        new_action = QAction("&Nouveau", self)
+        new_action = QAction("&Nouveau workspace", self)
         new_action.setShortcut(QKeySequence.New)  # type: ignore
         new_action.triggered.connect(self.file_handler.new_workspace)
         file_menu.addAction(new_action)
@@ -151,12 +165,20 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
         
+        # Menu Pages
+        pages_menu = menubar.addMenu("&Pages")
+        
+        add_page_action = QAction("&Nouvelle page", self)
+        add_page_action.setShortcut("Ctrl+T")
+        add_page_action.triggered.connect(self._add_new_page_from_menu)
+        pages_menu.addAction(add_page_action)
+        
         # Menu Stratégies
         strategy_menu = menubar.addMenu("&Stratégies")
         
         add_strategy_action = QAction("&Ajouter une stratégie", self)
         add_strategy_action.setShortcut("Ctrl+Shift+N")
-        add_strategy_action.triggered.connect(self.strategy_handler.add_new_strategy)
+        add_strategy_action.triggered.connect(self._add_strategy_to_current_page)
         strategy_menu.addAction(add_strategy_action)
         
         # Menu Aide
@@ -170,11 +192,108 @@ class MainWindow(QMainWindow):
         """Configure la barre de status"""
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
+        
+        # Indicateur de connexion Bloomberg (à droite de la statusbar)
+        self.connection_label = QLabel("⚫ Déconnecté")
+        self.connection_label.setStyleSheet("color: #888; padding: 0 10px;")
+        self.statusbar.addPermanentWidget(self.connection_label)
+        
         self.statusbar.showMessage("Prêt")
     
     def _apply_dark_theme(self):
         """Applique le thème sombre"""
         self.setStyleSheet(DARK_THEME_STYLESHEET)
+    
+    def _create_default_page(self):
+        """Crée une page par défaut au démarrage"""
+        page = Page(name="Général")
+        self._add_page(page, select=True)
+    
+    def _add_page(self, page: Page, select: bool = True):
+        """Ajoute une nouvelle page"""
+        page_widget = PageWidget(page)
+        page_widget.ticker_added.connect(self._on_ticker_added)
+        page_widget.ticker_removed.connect(self._on_ticker_removed)
+        page_widget.target_reached.connect(self.alert_handler.on_target_reached)
+        page_widget.target_left.connect(self.alert_handler.on_target_left)
+        
+        self.pages[page.id] = page_widget
+        self.page_stack.addWidget(page_widget)
+        self.sidebar.add_page(page, select=select)
+        
+        if select:
+            self.current_page_id = page.id
+    
+    def _remove_page(self, page_id: str):
+        """Supprime une page"""
+        if page_id in self.pages:
+            page_widget = self.pages.pop(page_id)
+            self.page_stack.removeWidget(page_widget)
+            page_widget.deleteLater()
+    
+    def get_current_page(self) -> Optional[PageWidget]:
+        """Retourne la page courante"""
+        if self.current_page_id and self.current_page_id in self.pages:
+            return self.pages[self.current_page_id]
+        return None
+    
+    def get_all_pages(self) -> list[PageWidget]:
+        """Retourne toutes les pages"""
+        return list(self.pages.values())
+    
+    # === Event Handlers ===
+    
+    def _on_page_selected(self, page_id: str):
+        """Appelé quand on sélectionne une page"""
+        if page_id in self.pages:
+            self.current_page_id = page_id
+            self.page_stack.setCurrentWidget(self.pages[page_id])
+            self.statusbar.showMessage(f"Page: {self.pages[page_id].page.name}", 2000)
+    
+    def _on_page_added(self, page: Page):
+        """Appelé quand on ajoute une page depuis la sidebar"""
+        self._add_page(page, select=True)
+        self.statusbar.showMessage(f"Page '{page.name}' créée", 3000)
+    
+    def _on_page_renamed(self, page_id: str, new_name: str):
+        """Appelé quand on renomme une page"""
+        if page_id in self.pages:
+            self.pages[page_id].page.name = new_name
+            self.pages[page_id].update_title()
+            self.statusbar.showMessage(f"Page renommée: {new_name}", 2000)
+    
+    def _on_page_deleted(self, page_id: str):
+        """Appelé quand on supprime une page"""
+        if page_id in self.pages:
+            page_name = self.pages[page_id].page.name
+            self._remove_page(page_id)
+            self.statusbar.showMessage(f"Page '{page_name}' supprimée", 3000)
+    
+    def _on_ticker_added(self, ticker: str):
+        """Appelé quand un ticker est ajouté"""
+        if self.bloomberg_service and self.bloomberg_service.is_connected:
+            self.bloomberg_service.subscribe(ticker)
+            self.statusbar.showMessage(f"Abonné à {ticker}", 2000)
+    
+    def _on_ticker_removed(self, ticker: str):
+        """Appelé quand un ticker est supprimé"""
+        # Vérifier si le ticker est encore utilisé ailleurs
+        ticker_still_used = any(
+            ticker in page.get_all_tickers()
+            for page in self.pages.values()
+        )
+        if not ticker_still_used and self.bloomberg_service:
+            self.bloomberg_service.unsubscribe(ticker)
+    
+    def _add_new_page_from_menu(self):
+        """Ajoute une page depuis le menu"""
+        self.sidebar._on_add_page()
+    
+    def _add_strategy_to_current_page(self):
+        """Ajoute une stratégie à la page courante"""
+        current_page = self.get_current_page()
+        if current_page:
+            current_page._on_add_strategy()
     
     def _show_about(self):
         """Affiche la boîte de dialogue À propos"""
@@ -184,12 +303,18 @@ class MainWindow(QMainWindow):
             "<h2>Strategy Price Monitor</h2>"
             "<p>Monitor de prix en temps réel pour stratégies d'options.</p>"
             "<p>Supporte: Butterfly, Condor, et stratégies personnalisées.</p>"
-            "<p>Version 1.0</p>"
+            "<p><b>Fonctionnalités:</b></p>"
+            "<ul>"
+            "<li>Multiples pages pour organiser vos stratégies</li>"
+            "<li>Alertes sonores et visuelles</li>"
+            "<li>Connexion Bloomberg en temps réel</li>"
+            "</ul>"
+            "<p>Version 2.0</p>"
         )
     
     def closeEvent(self, event):
         """Appelé à la fermeture de la fenêtre"""
-        # Arrêter Bloomberg en premier
+        # Arrêter Bloomberg
         if self.bloomberg_service:
             try:
                 self.bloomberg_service.stop()
@@ -211,8 +336,44 @@ class MainWindow(QMainWindow):
                 event.accept()
             else:
                 event.ignore()
-                # Redémarrer Bloomberg si on annule
                 if self.bloomberg_service and not self.bloomberg_service.is_connected:
                     self.bloomberg_handler.start_connection()
         else:
             event.accept()
+    
+    # === Méthodes pour la sauvegarde/chargement ===
+    
+    def to_dict(self) -> dict:
+        """Convertit tout le workspace en dictionnaire"""
+        return {
+            'version': '2.0',
+            'pages': [page.to_dict() for page in self.pages.values()]
+        }
+    
+    def load_from_dict(self, data: dict):
+        """Charge un workspace depuis un dictionnaire"""
+        # Supprimer toutes les pages existantes
+        for page_id in list(self.pages.keys()):
+            self._remove_page(page_id)
+            self.sidebar.remove_page(page_id)
+        
+        # Charger les nouvelles pages
+        pages_data = data.get('pages', [])
+        if not pages_data:
+            # Ancienne version: données à plat
+            self._create_default_page()
+            current_page = self.get_current_page()
+            if current_page:
+                for strategy_data in data.get('strategies', []):
+                    strategy = Strategy.from_dict(strategy_data)
+                    current_page.add_strategy(strategy)
+        else:
+            # Nouvelle version: pages multiples
+            for i, page_data in enumerate(pages_data):
+                page = Page.from_dict(page_data['page'])
+                self._add_page(page, select=(i == 0))
+                
+                page_widget = self.pages[page.id]
+                for strategy_data in page_data.get('strategies', []):
+                    strategy = Strategy.from_dict(strategy_data)
+                    page_widget.add_strategy(strategy)

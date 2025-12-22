@@ -32,9 +32,14 @@ class FileHandler:
             elif reply == QMessageBox.Cancel:  # type: ignore
                 return
         
-        # Supprimer toutes les stratégies
-        for strategy_id in list(self.window.strategy_widgets.keys()):
-            self.window.strategy_handler.on_strategy_deleted(strategy_id) 
+        # Supprimer toutes les pages
+        from ..models.page import Page
+        for page_id in list(self.window.pages.keys()):
+            self.window._remove_page(page_id)
+            self.window.sidebar.remove_page(page_id)
+        
+        # Créer une page par défaut
+        self.window._create_default_page()
         
         self.window.current_file = None
         self.window.setWindowTitle("Strategy Price Monitor")
@@ -42,11 +47,9 @@ class FileHandler:
     
     def open_file(self):
         """Ouvre un fichier de sauvegarde"""
-        from ..models.strategy import Strategy
-        
         file_path, _ = QFileDialog.getOpenFileName(
             self.window,
-            "Ouvrir des stratégies",
+            "Ouvrir un workspace",
             "",
             "JSON Files (*.json);;All Files (*)"
         )
@@ -58,14 +61,8 @@ class FileHandler:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # Supprimer les stratégies actuelles
-            for strategy_id in list(self.window.strategy_widgets.keys()):
-                self.window.strategy_handler.on_strategy_deleted(strategy_id)
-            
-            # Charger les nouvelles stratégies
-            for strategy_data in data.get('strategies', []):
-                strategy = Strategy.from_dict(strategy_data)
-                self.window.strategy_handler.add_strategy_widget(strategy)
+            # Charger les données (supporte ancien et nouveau format)
+            self.window.load_from_dict(data)
             
             self.window.current_file = file_path
             self.window.setWindowTitle(f"Strategy Price Monitor - {Path(file_path).name}")
@@ -79,7 +76,7 @@ class FileHandler:
             )
     
     def save_file(self):
-        """Sauvegarde les stratégies"""
+        """Sauvegarde le workspace"""
         if not self.window.current_file:
             self.save_file_as()
             return
@@ -90,7 +87,7 @@ class FileHandler:
         """Sauvegarde sous un nouveau nom"""
         file_path, _ = QFileDialog.getSaveFileName(
             self.window,
-            "Sauvegarder les stratégies",
+            "Sauvegarder le workspace",
             "",
             "JSON Files (*.json);;All Files (*)"
         )
@@ -105,12 +102,7 @@ class FileHandler:
     def _save_to_file(self, file_path: str):
         """Sauvegarde dans un fichier"""
         try:
-            data = {
-                'strategies': [
-                    strategy.to_dict() 
-                    for strategy in self.window.strategies.values()
-                ]
-            }
+            data = self.window.to_dict()
             
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
