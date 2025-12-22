@@ -9,7 +9,7 @@ import re
 # Ajouter le chemin du module bloomberg
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bloomberg'))
 
-from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker, QWaitCondition
+from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker
 from typing import Optional
 from datetime import datetime
 
@@ -82,6 +82,9 @@ class BloombergWorker(QThread):
     subscription_failed = Signal(str, str)  # ticker, error
     connection_status = Signal(bool, str)  # connected, message
     
+    # Signal interne pour déclencher le traitement des subscriptions
+    _process_subscriptions = Signal()
+    
     def __init__(self, host: str = "localhost", port: int = 8194):
         super().__init__()
         self.host = host
@@ -92,7 +95,9 @@ class BloombergWorker(QThread):
         self.mutex = QMutex()
         self._pending_subscriptions: list[str] = []
         self._pending_unsubscriptions: list[str] = []
-        self._condition = QWaitCondition()
+        
+        # Connecter le signal interne
+        self._process_subscriptions.connect(self._on_process_subscriptions_requested)
     
     def run(self):
         """Boucle principale du thread Bloomberg"""
@@ -131,16 +136,15 @@ class BloombergWorker(QThread):
             print("[Bloomberg] Connecté!")
             self.connection_status.emit(True, "Connecté à Bloomberg")
             
-            # Boucle pour traiter les subscriptions en attente
-            # Les événements Bloomberg sont traités via le handler (callback)
+            # Traiter les subscriptions initiales
+            self._process_pending_operations()
+            
+            # La boucle principale - les événements Bloomberg sont traités via le handler (callback)
+            # Les nouvelles subscriptions sont traitées via le signal _process_subscriptions
             while self.is_running:
-                self._process_pending_operations()
-                
-                # Attendre qu'une nouvelle subscription soit demandée
-                # ou timeout de 50ms pour traiter rapidement
-                with QMutexLocker(self.mutex):
-                    if not self._pending_subscriptions and not self._pending_unsubscriptions:
-                        self._condition.wait(self.mutex, 50)
+                # Petit sleep pour éviter de consommer 100% CPU
+                # Les subscriptions sont traitées immédiatement via le slot
+                self.msleep(10)
             
             print("[Bloomberg] Arrêt du worker")
             
@@ -155,6 +159,11 @@ class BloombergWorker(QThread):
                     self.session.stop()
                 except:
                     pass
+    
+    def _on_process_subscriptions_requested(self):
+        """Slot appelé quand de nouvelles subscriptions sont demandées"""
+        if self.is_running and self.session:
+            self._process_pending_operations()
     
     def _process_pending_operations(self):
         """Traite les subscriptions/unsubscriptions en attente"""
@@ -235,7 +244,8 @@ class BloombergWorker(QThread):
         with QMutexLocker(self.mutex):
             if ticker not in self.subscriptions and ticker not in self._pending_subscriptions:
                 self._pending_subscriptions.append(ticker)
-                self._condition.wakeOne()  # Réveille le thread
+        # Émettre le signal pour traiter immédiatement (hors du mutex)
+        self._process_subscriptions.emit()
     
     def unsubscribe(self, ticker: str):
         """Supprime une subscription (thread-safe)"""
@@ -244,13 +254,12 @@ class BloombergWorker(QThread):
                 self._pending_unsubscriptions.append(ticker)
                 if ticker in self._pending_subscriptions:
                     self._pending_subscriptions.remove(ticker)
-                self._condition.wakeOne()  # Réveille le thread
+        # Émettre le signal pour traiter immédiatement (hors du mutex)
+        self._process_subscriptions.emit()
     
     def stop(self):
         """Arrête le worker"""
         self.is_running = False
-        with QMutexLocker(self.mutex):
-            self._condition.wakeOne()  # Réveille le thread pour qu'il se termine
         # Attendre max 2 secondes pour que le thread se termine
         if not self.wait(2000):
             self.terminate()  # Forcer l'arrêt si timeout
