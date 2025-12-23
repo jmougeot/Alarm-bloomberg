@@ -218,6 +218,11 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         
+        # Version de l'application
+        version_label = QLabel("V2")
+        version_label.setStyleSheet("color: #666; padding: 0 10px; font-weight: bold;")
+        self.statusbar.addPermanentWidget(version_label)
+        
         # Indicateur de connexion Bloomberg (à droite de la statusbar)
         self.connection_label = QLabel("⚫ Déconnecté")
         self.connection_label.setStyleSheet("color: #888; padding: 0 10px;")
