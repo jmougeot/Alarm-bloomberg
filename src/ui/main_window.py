@@ -1,6 +1,7 @@
 """
 Fenêtre principale de l'application Strategy Monitor
 """
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtWidgets import (
@@ -47,6 +48,7 @@ class MainWindow(QMainWindow):
         self.bloomberg_service: Optional[BloombergService] = None
         self.current_file: Optional[str] = None
         self._bloomberg_started = False
+        self._loading_workspace = False  # Flag pour éviter création page par défaut
         
         # Propriétés de compatibilité pour les handlers
         self._strategies_cache: dict[str, Strategy] = {}
@@ -65,8 +67,11 @@ class MainWindow(QMainWindow):
         self.bloomberg_handler.setup_bloomberg()
         self._apply_dark_theme()
         
-        # Créer une page par défaut
-        self._create_default_page()
+        # Charger automatiquement le dernier workspace ou créer une page par défaut
+        self._loading_workspace = True
+        if not self.file_handler.auto_load_last_workspace():
+            self._create_default_page()
+        self._loading_workspace = False
     
     @property
     def strategies(self) -> dict[str, Strategy]:
@@ -160,6 +165,26 @@ class MainWindow(QMainWindow):
         
         file_menu.addSeparator()
         
+        # Import/Export de pages
+        import_page_action = QAction("&Importer une page...", self)
+        import_page_action.setShortcut("Ctrl+Shift+I")
+        import_page_action.triggered.connect(self.file_handler.import_page)
+        file_menu.addAction(import_page_action)
+        
+        export_page_action = QAction("&Exporter la page courante...", self)
+        export_page_action.setShortcut("Ctrl+Shift+E")
+        export_page_action.triggered.connect(self._export_current_page)
+        file_menu.addAction(export_page_action)
+        
+        file_menu.addSeparator()
+        
+        # Ouvrir fichier legacy
+        open_legacy_action = QAction("Ouvrir un fichier JSON (ancien format)...", self)
+        open_legacy_action.triggered.connect(self.file_handler.open_legacy_file)
+        file_menu.addAction(open_legacy_action)
+        
+        file_menu.addSeparator()
+        
         quit_action = QAction("&Quitter", self)
         quit_action.setShortcut(QKeySequence.Quit)  # type: ignore
         quit_action.triggered.connect(self.close)
@@ -216,6 +241,9 @@ class MainWindow(QMainWindow):
         page_widget.ticker_removed.connect(self._on_ticker_removed)
         page_widget.target_reached.connect(self.alert_handler.on_target_reached)
         page_widget.target_left.connect(self.alert_handler.on_target_left)
+        page_widget.strategy_added.connect(self._on_page_modified)
+        page_widget.strategy_deleted.connect(self._on_page_modified)
+        page_widget.strategy_updated.connect(self._on_page_modified)
         
         self.pages[page.id] = page_widget
         self.page_stack.addWidget(page_widget)
@@ -254,6 +282,31 @@ class MainWindow(QMainWindow):
         """Appelé quand on ajoute une page depuis la sidebar"""
         self._add_page(page, select=True)
         self.statusbar.showMessage(f"Page '{page.name}' créée", 3000)
+        self._trigger_auto_save()
+    
+    def _on_page_modified(self, *args):
+        """Appelé quand une page est modifiée (stratégie ajoutée/supprimée/modifiée)"""
+        if not self._loading_workspace:
+            self._trigger_auto_save()
+    
+    def _trigger_auto_save(self):
+        """Déclenche une sauvegarde automatique avec debounce"""
+        if hasattr(self, '_auto_save_timer') and self._auto_save_timer.isActive():
+            self._auto_save_timer.stop()
+        
+        if not hasattr(self, '_auto_save_timer'):
+            self._auto_save_timer = QTimer()
+            self._auto_save_timer.setSingleShot(True)
+            self._auto_save_timer.timeout.connect(self._do_auto_save)
+        
+        # Sauvegarder après 2 secondes d'inactivité
+        self._auto_save_timer.start(2000)
+    
+    def _do_auto_save(self):
+        """Effectue la sauvegarde automatique"""
+        if self.current_file and Path(self.current_file).is_dir():
+            self.file_handler.save_current_page()
+            self.file_handler._update_workspace_meta()
     
     def _on_page_renamed(self, page_id: str, new_name: str):
         """Appelé quand on renomme une page"""
@@ -303,6 +356,11 @@ class MainWindow(QMainWindow):
         current_page = self.get_current_page()
         if current_page:
             current_page._on_add_strategy()
+    
+    def _export_current_page(self):
+        """Exporte la page courante"""
+        if self.current_page_id:
+            self.file_handler.export_page(self.current_page_id)
     
     def _show_about(self):
         """Affiche la boîte de dialogue À propos"""

@@ -1,26 +1,39 @@
 {
-  "strategies": [
+  "version": "2.0",
+  "pages": [
     {
-      "id": "1d861cab-5ba5-40a7-a86c-e91d025e7332",
-      "name": "Stratégie 1",
-      "legs": [
+      "page": {
+        "id": "ea31d5cb-2f91-40a3-8874-5f7a57599a28",
+        "name": "Général",
+        "icon": "📊",
+        "order": 0
+      },
+      "strategies": [
         {
-          "id": "4a8a9a4a-ff85-4365-9a82-5fe9cf275521",
-          "ticker": "SFRH6 98.00 Comdity",
-          "position": "long",
-          "quantity": 1
-        },
-        {
-          "id": "f54a3ad0-0d85-49e3-987c-1acf531a1d39",
-          "ticker": "SFRH6 98.125 Comdity",
-          "position": "short",
-          "quantity": 1
+          "id": "1d861cab-5ba5-40a7-a86c-e91d025e7332",
+          "name": "Stratégie 1",
+          "client": "Karl",
+          "action": "buy to open",
+          "legs": [
+            {
+              "id": "4a8a9a4a-ff85-4365-9a82-5fe9cf275521",
+              "ticker": "SFRH6 98.00 COMDTY",
+              "position": "long",
+              "quantity": 1
+            },
+            {
+              "id": "f54a3ad0-0d85-49e3-987c-1acf531a1d39",
+              "ticker": "SFRH6 98.125 COMDTY",
+              "position": "short",
+              "quantity": 1
+            }
+          ],
+          "target_price": -0.05,
+          "target_condition": "inferieur",
+          "status": "Fait",
+          "created_at": "2025-12-17T10:42:16.238718"
         }
-      ],
-      "target_price": -0.05,
-      "price_tolerance": 0.060000000000000005,
-      "status": "Fait",
-      "created_at": "2025-12-17T10:42:16.238718"
+      ]
     }
   ]
 }

@@ -202,6 +202,8 @@ class Strategy:
         return {
             "id": self.id,
             "name": self.name,
+            "client": self.client,
+            "action": self.action,
             "legs": [leg.to_dict() for leg in self.legs],
             "target_price": self.target_price,
             "target_condition": self.target_condition.value,
@@ -216,6 +218,8 @@ class Strategy:
         strategy = cls(
             id=data.get("id", str(uuid.uuid4())),
             name=data.get("name", "Nouvelle Stratégie"),
+            client=data.get("client"),
+            action=data.get("action"),
             target_price=data.get("target_price"),
             target_condition=TargetCondition(condition) if condition else TargetCondition.INFERIEUR,
             status=StrategyStatus(data.get("status", "En cours"))
