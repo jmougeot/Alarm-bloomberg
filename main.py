@@ -8,6 +8,16 @@ import os
 # Ajouter les chemins pour les imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Configuration du chemin des plugins Qt (résout l'erreur "Could not find the Qt platform plugin")
+try:
+    import PySide6
+    pyside6_path = os.path.dirname(PySide6.__file__)
+    plugins_path = os.path.join(pyside6_path, "plugins")
+    if os.path.exists(plugins_path):
+        os.environ["QT_PLUGIN_PATH"] = plugins_path
+except ImportError:
+    pass
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont

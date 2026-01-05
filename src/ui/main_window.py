@@ -21,6 +21,8 @@ from .sidebar_widget import SidebarWidget
 from .page_widget import PageWidget
 from .strategy_block_widget import StrategyBlockWidget
 from .login_dialog import LoginDialog
+from .group_dialog import GroupDialog
+from .share_page_dialog import SharePageDialog
 from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler
 from .styles.dark_theme import DARK_THEME_STYLESHEET
 
@@ -79,11 +81,9 @@ class MainWindow(QMainWindow):
         # Tenter la connexion au serveur
         QTimer.singleShot(500, self._attempt_server_connection)
         
-        # Charger automatiquement le dernier workspace ou créer une page par défaut
-        self._loading_workspace = True
-        if not self.file_handler.auto_load_last_workspace():
-            self._create_default_page()
-        self._loading_workspace = False
+        # Plus de chargement automatique de workspace local
+        # Les données viennent maintenant du serveur
+        # Si pas connecté, une page par défaut sera créée
     
     @property
     def strategies(self) -> dict[str, Strategy]:
@@ -155,45 +155,23 @@ class MainWindow(QMainWindow):
         # Menu Fichier
         file_menu = menubar.addMenu("&Fichier")
         
-        new_action = QAction("&Nouveau workspace", self)
-        new_action.setShortcut(QKeySequence.New)  # type: ignore
-        new_action.triggered.connect(self.file_handler.new_workspace)
-        file_menu.addAction(new_action)
-        
-        open_action = QAction("&Ouvrir...", self)
-        open_action.setShortcut(QKeySequence.Open)  # type: ignore
-        open_action.triggered.connect(self.file_handler.open_file)
-        file_menu.addAction(open_action)
-        
-        save_action = QAction("&Sauvegarder", self)
-        save_action.setShortcut(QKeySequence.Save)  # type: ignore
-        save_action.triggered.connect(self.file_handler.save_file)
-        file_menu.addAction(save_action)
-        
-        save_as_action = QAction("Sauvegarder &sous...", self)
-        save_as_action.setShortcut(QKeySequence.SaveAs)  # type: ignore
-        save_as_action.triggered.connect(self.file_handler.save_file_as)
-        file_menu.addAction(save_as_action)
-        
-        file_menu.addSeparator()
-        
-        # Import/Export de pages
-        import_page_action = QAction("&Importer une page...", self)
+        # Import/Export de pages (pour backup local)
+        import_page_action = QAction("&Importer une page (JSON)...", self)
         import_page_action.setShortcut("Ctrl+Shift+I")
         import_page_action.triggered.connect(self.file_handler.import_page)
         file_menu.addAction(import_page_action)
         
-        export_page_action = QAction("&Exporter la page courante...", self)
+        export_page_action = QAction("&Exporter la page courante (JSON)...", self)
         export_page_action.setShortcut("Ctrl+Shift+E")
         export_page_action.triggered.connect(self._export_current_page)
         file_menu.addAction(export_page_action)
         
         file_menu.addSeparator()
         
-        # Ouvrir fichier legacy
-        open_legacy_action = QAction("Ouvrir un fichier JSON (ancien format)...", self)
-        open_legacy_action.triggered.connect(self.file_handler.open_legacy_file)
-        file_menu.addAction(open_legacy_action)
+        # Déconnexion
+        logout_action = QAction("&Déconnexion", self)
+        logout_action.triggered.connect(self._logout)
+        file_menu.addAction(logout_action)
         
         file_menu.addSeparator()
         
@@ -210,6 +188,13 @@ class MainWindow(QMainWindow):
         add_page_action.triggered.connect(self._add_new_page_from_menu)
         pages_menu.addAction(add_page_action)
         
+        pages_menu.addSeparator()
+        
+        share_page_action = QAction("&Partager la page courante...", self)
+        share_page_action.setShortcut("Ctrl+Shift+S")
+        share_page_action.triggered.connect(self._share_current_page)
+        pages_menu.addAction(share_page_action)
+        
         # Menu Stratégies
         strategy_menu = menubar.addMenu("&Stratégies")
         
@@ -217,6 +202,14 @@ class MainWindow(QMainWindow):
         add_strategy_action.setShortcut("Ctrl+Shift+N")
         add_strategy_action.triggered.connect(self._add_strategy_to_current_page)
         strategy_menu.addAction(add_strategy_action)
+        
+        # Menu Groupes
+        groups_menu = menubar.addMenu("&Groupes")
+        
+        manage_groups_action = QAction("&Gérer les groupes...", self)
+        manage_groups_action.setShortcut("Ctrl+G")
+        manage_groups_action.triggered.connect(self._manage_groups)
+        groups_menu.addAction(manage_groups_action)
         
         # Menu Aide
         help_menu = menubar.addMenu("&Aide")
@@ -251,7 +244,7 @@ class MainWindow(QMainWindow):
         page = Page(name="Général")
         self._add_page(page, select=True)
     
-    def _add_page(self, page: Page, select: bool = True):
+    def _add_page(self, page: Page, select: bool = True, sync_to_server: bool = True):
         """Ajoute une nouvelle page"""
         page_widget = PageWidget(page)
         page_widget.ticker_added.connect(self._on_ticker_added)
@@ -259,22 +252,30 @@ class MainWindow(QMainWindow):
         page_widget.target_reached.connect(self.alert_handler.on_target_reached)
         page_widget.target_left.connect(self.alert_handler.on_target_left)
         page_widget.strategy_added.connect(self._on_page_modified)
-        page_widget.strategy_deleted.connect(self._on_page_modified)
+        page_widget.strategy_deleted.connect(self._on_strategy_deleted)
         page_widget.strategy_updated.connect(self._on_page_modified)
         
         self.pages[page.id] = page_widget
         self.page_stack.addWidget(page_widget)
         self.sidebar.add_page(page, select=select)
         
+        # Envoyer au serveur si connecté (sauf si c'est une page déjà présente sur le serveur)
+        if sync_to_server and self._online_mode and self.alarm_server:
+            self.alarm_server.create_page(page.name)
+        
         if select:
             self.current_page_id = page.id
     
-    def _remove_page(self, page_id: str):
+    def _remove_page(self, page_id: str, sync_to_server: bool = True):
         """Supprime une page"""
         if page_id in self.pages:
             page_widget = self.pages.pop(page_id)
             self.page_stack.removeWidget(page_widget)
             page_widget.deleteLater()
+            
+            # Synchroniser avec le serveur
+            if sync_to_server and self._online_mode and self.alarm_server:
+                self.alarm_server.delete_page(page_id)
     
     def get_current_page(self) -> Optional[PageWidget]:
         """Retourne la page courante"""
@@ -301,10 +302,126 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Page '{page.name}' créée", 3000)
         self._trigger_auto_save()
     
-    def _on_page_modified(self, *args):
-        """Appelé quand une page est modifiée (stratégie ajoutée/supprimée/modifiée)"""
+    def _on_page_modified(self, page_id: str = None, strategy_or_id = None, *args):
+        """Appelé quand une page est modifiée (stratégie ajoutée)"""
+        from ..models.strategy import Strategy
+        
+        # Le signal peut envoyer soit un ID (str) soit un objet Strategy
+        if isinstance(strategy_or_id, Strategy):
+            strategy = strategy_or_id
+            strategy_id = strategy.id
+            print(f"[Page] Strategy added - page_id={page_id}, strategy={strategy.name}", flush=True)
+            
+            # Synchroniser avec le serveur
+            if self._online_mode and self.alarm_server:
+                print(f"[Page] Syncing strategy '{strategy.name}' to server", flush=True)
+                self._sync_strategy_to_server('create', strategy, page_id or self.current_page_id)
+        else:
+            strategy_id = strategy_or_id
+            print(f"[Page] Strategy updated - page_id={page_id}, strategy_id={strategy_id}", flush=True)
+            
+            # Pour les mises à jour, chercher la stratégie
+            if self._online_mode and self.alarm_server and page_id and page_id in self.pages:
+                page_widget = self.pages[page_id]
+                if strategy_id in page_widget.strategies:
+                    strategy = page_widget.strategies[strategy_id]
+                    print(f"[Page] Syncing strategy update '{strategy.name}' to server", flush=True)
+                    self._sync_strategy_to_server('update', strategy, page_id)
+        
         if not self._loading_workspace:
             self._trigger_auto_save()
+    
+    def _on_strategy_deleted(self, page_id: str, strategy_id: str):
+        """Appelé quand une stratégie est supprimée"""
+        print(f"[Page] Strategy deleted - page_id={page_id}, strategy_id={strategy_id}", flush=True)
+        
+        # Synchroniser avec le serveur
+        if self._online_mode and self.alarm_server:
+            print(f"[Page] Deleting strategy {strategy_id} from server", flush=True)
+            self.alarm_server.delete_alarm(strategy_id=strategy_id)
+        
+        if not self._loading_workspace:
+            self._trigger_auto_save()
+    
+    def _sync_strategy_to_server(self, action: str, strategy, page_id: str):
+        """Synchronise une stratégie avec le serveur"""
+        if not self._online_mode or not self.alarm_server:
+            return
+        
+        from .strategy_block_widget import StrategyBlockWidget
+        from ..models.strategy import TargetCondition
+        
+        print(f"[Server] Syncing strategy '{strategy.name}' - action={action}, legs={len(strategy.legs)}", flush=True)
+        
+        if action == 'create':
+            # Si la stratégie n'a pas de legs, créer quand même une entrée sur le serveur
+            if len(strategy.legs) == 0:
+                alarm_data = {
+                    'strategy_id': strategy.id,
+                    'strategy_name': strategy.name,
+                    'leg_index': 0,
+                    'ticker': '',
+                    'option': '',  # Champ requis par le serveur
+                    'target_value': strategy.target_price or 0.0,
+                    'target_price': strategy.target_price or 0.0,
+                    'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
+                    'active': True
+                }
+                print(f"[Server] Creating alarm (no legs): {strategy.name}", flush=True)
+                self.alarm_server.create_alarm(page_id, alarm_data)
+            else:
+                for leg_idx, leg in enumerate(strategy.legs):
+                    alarm_data = {
+                        'strategy_id': strategy.id,
+                        'strategy_name': strategy.name,
+                        'leg_index': leg_idx,
+                        'ticker': leg.ticker,
+                        'option': leg.ticker,  # Champ requis par le serveur
+                        'target_value': strategy.target_price or 0.0,
+                        'target_price': strategy.target_price or 0.0,
+                        'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
+                        'active': True
+                    }
+                    print(f"[Server] Creating alarm: {strategy.name} - {leg.ticker}", flush=True)
+                    self.alarm_server.create_alarm(page_id, alarm_data)
+        
+        elif action == 'update':
+            # Pour les updates, on supprime d'abord tous les alarms de cette stratégie
+            # puis on les recrée avec les nouveaux legs
+            print(f"[Server] Updating strategy: deleting old alarms and recreating", flush=True)
+            self.alarm_server.delete_alarm(strategy_id=strategy.id)
+            
+            # Puis recréer avec les legs actuels
+            if len(strategy.legs) == 0:
+                alarm_data = {
+                    'strategy_id': strategy.id,
+                    'strategy_name': strategy.name,
+                    'leg_index': 0,
+                    'ticker': '',
+                    'option': '',
+                    'target_value': strategy.target_price or 0.0,
+                    'target_price': strategy.target_price or 0.0,
+                    'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
+                    'active': True
+                }
+                self.alarm_server.create_alarm(page_id, alarm_data)
+            else:
+                for leg_idx, leg in enumerate(strategy.legs):
+                    alarm_data = {
+                        'strategy_id': strategy.id,
+                        'strategy_name': strategy.name,
+                        'leg_index': leg_idx,
+                        'ticker': leg.ticker,
+                        'option': leg.ticker,
+                        'target_value': strategy.target_price or 0.0,
+                        'target_price': strategy.target_price or 0.0,
+                        'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
+                        'active': True
+                    }
+                    self.alarm_server.create_alarm(page_id, alarm_data)
+        
+        elif action == 'delete':
+            self.alarm_server.delete_alarm(strategy.id)
     
     def _trigger_auto_save(self):
         """Déclenche une sauvegarde automatique avec debounce"""
@@ -396,39 +513,6 @@ class MainWindow(QMainWindow):
             "<p>Version 2.0</p>"
         )
     
-    def closeEvent(self, event):
-        """Appelé à la fermeture de la fenêtre"""
-        # Arrêter le serveur d'alarmes
-        if self.alarm_server:
-            self.alarm_server.stop()
-        
-        # Arrêter Bloomberg
-        if self.bloomberg_service:
-            try:
-                self.bloomberg_service.stop()
-            except Exception:
-                pass
-        
-        if self.strategies:
-            reply = QMessageBox.question(
-                self,
-                "Quitter",
-                "Voulez-vous sauvegarder avant de quitter?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel  # type: ignore
-            )
-            
-            if reply == QMessageBox.Save:  # type: ignore
-                self.file_handler.save_file()
-                event.accept()
-            elif reply == QMessageBox.Discard:  # type: ignore
-                event.accept()
-            else:
-                event.ignore()
-                if self.bloomberg_service and not self.bloomberg_service.is_connected:
-                    self.bloomberg_handler.start_connection()
-        else:
-            event.accept()
-    
     # === Méthodes pour la sauvegarde/chargement ===
     
     def to_dict(self) -> dict:
@@ -462,7 +546,10 @@ class MainWindow(QMainWindow):
                 page_name = page_data.get('name', 'Sans nom')
                 
                 # Créer la page
-                page_widget = self.create_page(page_name, page_id)
+                from ..models.page import Page
+                page = Page(name=page_name, id=page_id)
+                self._add_page(page, select=False)
+                page_widget = self.pages[page_id]
                 
                 # Charger les stratégies
                 for strategy_data in page_data.get('strategies', []):
@@ -489,16 +576,21 @@ class MainWindow(QMainWindow):
             # Utilisateur a cliqué "Continuer hors ligne"
             self._online_mode = False
             self.statusbar.showMessage("Mode hors ligne")
+            # Créer une page par défaut en mode hors ligne
+            self._create_default_page()
         else:
             self._online_mode = False
+            # Créer une page par défaut
+            self._create_default_page()
     
     def _on_login_attempt(self, username: str, password: str):
         """Appelé quand l'utilisateur tente de se connecter"""
         dialog = self.sender()
-        dialog.hide_error()
+        if hasattr(dialog, 'hide_error'):
+            dialog.hide_error()  # type: ignore
         
         # Déterminer si c'est un login ou register
-        is_register = dialog.is_register_mode()
+        is_register = dialog.is_register_mode() if hasattr(dialog, 'is_register_mode') else False  # type: ignore
         
         # Créer une coroutine pour l'appel async
         async def do_auth():
@@ -517,13 +609,17 @@ class MainWindow(QMainWindow):
             loop.close()
             
             if success:
-                dialog.accept()
+                if hasattr(dialog, 'accept'):
+                    dialog.accept()  # type: ignore
                 self._start_server_sync()
-                self.statusbar.showMessage(f"Connecté en tant que {self.auth_service.user_info.get('username', username)}")
+                username_display = self.auth_service.user_info.get('username', username) if self.auth_service.user_info else username
+                self.statusbar.showMessage(f"Connecté en tant que {username_display}")
             else:
-                dialog._show_error("Échec de l'authentification. Vérifiez vos identifiants.")
+                if hasattr(dialog, '_show_error'):
+                    dialog._show_error("Échec de l'authentification. Vérifiez vos identifiants.")  # type: ignore
         except Exception as e:
-            dialog._show_error(f"Erreur de connexion: {str(e)}")
+            if hasattr(dialog, '_show_error'):
+                dialog._show_error(f"Erreur de connexion: {str(e)}")  # type: ignore
     
     def _start_server_sync(self):
         """Démarre la synchronisation avec le serveur"""
@@ -568,16 +664,93 @@ class MainWindow(QMainWindow):
     def _on_server_error(self, error_msg: str):
         """Appelé en cas d'erreur serveur"""
         print(f"[Server] Error: {error_msg}")
+        
+        # Ignorer les erreurs non critiques
+        non_critical_errors = [
+            "Alarm not found",
+            "Page not found",
+            "Strategy not found"
+        ]
+        
+        if any(err.lower() in error_msg.lower() for err in non_critical_errors):
+            # Ces erreurs sont normales lors de la synchronisation (ex: suppression d'un élément qui n'existe pas)
+            return
+        
         QMessageBox.warning(self, "Erreur serveur", error_msg)
     
     def _on_initial_state(self, state: dict):
         """Appelé quand l'état initial est reçu du serveur"""
-        print(f"[Server] Initial state received: {len(state.get('pages', []))} pages, {len(state.get('alarms', []))} alarms")
+        pages_data = state.get('pages', [])
+        alarms_data = state.get('alarms', [])
         
-        # TODO: Synchroniser l'état local avec le serveur
-        # Pour l'instant, on garde l'état local
+        print(f"[Server] Initial state received: {len(pages_data)} pages, {len(alarms_data)} alarms")
         
-        self.statusbar.showMessage("Synchronisé avec le serveur")
+        # Charger les pages (ne pas les renvoyer au serveur)
+        from ..models.page import Page
+        for idx, page_data in enumerate(pages_data):
+            page = Page(
+                id=page_data.get('id'),
+                name=page_data.get('name', 'Page sans nom')
+            )
+            # Ne sélectionner que la première page, et ne pas synchroniser avec le serveur
+            self._add_page(page, select=(idx == 0), sync_to_server=False)
+        
+        # Charger les alarmes (converties en stratégies)
+        # On regroupe par page_id puis par strategy_id
+        from ..models.strategy import Strategy, TargetCondition, Position
+        
+        # Debug: afficher les alarmes reçues avec toutes les données
+        print(f"[Server] === Raw alarms data ===", flush=True)
+        for alarm_data in alarms_data:
+            print(f"[Server] Alarm: {alarm_data}", flush=True)
+        print(f"[Server] === End raw data ===", flush=True)
+        
+        # Regrouper les alarmes par page, puis par stratégie
+        strategies_by_page = {}  # {page_id: {strategy_id: Strategy}}
+        
+        for alarm_data in alarms_data:
+            page_id = alarm_data.get('page_id')
+            strategy_id = alarm_data.get('strategy_id')
+            
+            if not page_id or not strategy_id:
+                print(f"[Server] Warning: Alarm missing page_id or strategy_id", flush=True)
+                continue
+            
+            if page_id not in strategies_by_page:
+                strategies_by_page[page_id] = {}
+            
+            if strategy_id not in strategies_by_page[page_id]:
+                strategy = Strategy(
+                    id=strategy_id,
+                    name=alarm_data.get('strategy_name', 'Stratégie')
+                )
+                # Définir le target sur la stratégie
+                strategy.target_price = alarm_data.get('target_value', 0.0)
+                condition = alarm_data.get('condition', 'below')
+                strategy.target_condition = TargetCondition.SUPERIEUR if condition == 'above' else TargetCondition.INFERIEUR
+                strategies_by_page[page_id][strategy_id] = strategy
+            
+            # Ajouter un leg à la stratégie si le ticker n'est pas vide
+            strategy = strategies_by_page[page_id][strategy_id]
+            ticker = alarm_data.get('ticker', '') or alarm_data.get('option', '')
+            if ticker:
+                strategy.add_leg(
+                    ticker=ticker,
+                    position=Position.LONG,
+                    quantity=1
+                )
+        
+        # Ajouter les stratégies à leurs pages respectives
+        for page_id, strategies_dict in strategies_by_page.items():
+            if page_id in self.pages:
+                page_widget = self.pages[page_id]
+                for strategy in strategies_dict.values():
+                    print(f"[Server] Adding strategy '{strategy.name}' to page {page_id}", flush=True)
+                    page_widget.add_strategy(strategy, sync_to_server=False)
+            else:
+                print(f"[Server] Warning: Page {page_id} not found for strategies", flush=True)
+        
+        self.statusbar.showMessage(f"Synchronisé: {len(pages_data)} pages, {len(alarms_data)} alarmes", 5000)
     
     def _on_server_alarm_created(self, alarm_data: dict):
         """Appelé quand une alarme est créée sur le serveur"""
@@ -599,3 +772,94 @@ class MainWindow(QMainWindow):
         print(f"[Server] Page created: {page_data.get('name')}")
         # TODO: Créer la page localement
         self._subscribe_all_tickers()
+    
+    def closeEvent(self, event):
+        """Appelé quand l'application se ferme"""
+        # Si connecté au serveur, les données sont déjà synchronisées
+        if self._online_mode and self.alarm_server:
+            # Fermer proprement la connexion WebSocket
+            if hasattr(self.alarm_server, 'stop'):
+                self.alarm_server.stop()
+        
+        # Arrêter Bloomberg si démarré
+        if self._bloomberg_started and self.bloomberg_service:
+            try:
+                self.bloomberg_service.stop()
+            except:
+                pass
+        
+        event.accept()
+    
+    def _logout(self):
+        """Déconnexion"""
+        reply = QMessageBox.question(
+            self,
+            "Déconnexion",
+            "Voulez-vous vous déconnecter?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No  # type: ignore
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:  # type: ignore
+            # Déconnecter du serveur
+            if self.alarm_server:
+                self.alarm_server.stop()
+                self.alarm_server = None
+            
+            # Supprimer le token
+            self.auth_service.logout()
+            
+            # Fermer l'application
+            self.close()
+    
+    def _manage_groups(self):
+        """Ouvre le dialog de gestion des groupes"""
+        if not self.auth_service.is_authenticated():
+            QMessageBox.warning(
+                self,
+                "Non connecté",
+                "Vous devez être connecté au serveur pour gérer les groupes."
+            )
+            return
+        
+        dialog = GroupDialog(self.auth_service, self)
+        dialog.exec()
+    
+    def _share_current_page(self):
+        """Ouvre le dialog de partage de la page courante"""
+        if not self.auth_service.is_authenticated():
+            QMessageBox.warning(
+                self,
+                "Non connecté",
+                "Vous devez être connecté au serveur pour partager une page."
+            )
+            return
+        
+        if not self.current_page_id:
+            QMessageBox.warning(
+                self,
+                "Pas de page",
+                "Aucune page sélectionnée."
+            )
+            return
+        
+        page_widget = self.pages.get(self.current_page_id)
+        if not page_widget:
+            return
+        
+        # Vérifier si l'utilisateur est owner
+        page = page_widget.page
+        if not getattr(page, 'is_owner', True):
+            QMessageBox.warning(
+                self,
+                "Permission refusée",
+                "Seul le propriétaire peut partager cette page."
+            )
+            return
+        
+        dialog = SharePageDialog(
+            self.auth_service,
+            self.current_page_id,
+            page.name,
+            self
+        )
+        dialog.exec()

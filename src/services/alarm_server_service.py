@@ -3,9 +3,9 @@ Service WebSocket pour la synchronisation avec le serveur d'alarmes
 """
 import asyncio
 import json
-from typing import Optional, Callable, Dict, Any, List
+from typing import Optional, Dict, Any
+from queue import Queue
 import websockets
-from websockets.client import WebSocketClientProtocol
 from PySide6.QtCore import QObject, Signal, QThread
 
 
@@ -29,11 +29,12 @@ class AlarmServerService(QObject):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.ws: Optional[WebSocketClientProtocol] = None
+        self.ws = None
         self.ws_url: Optional[str] = None
         self._running = False
         self._reconnect_delay = 5.0
         self._thread: Optional[QThread] = None
+        self._message_queue = Queue()  # File de messages à envoyer
         
     def start(self, ws_url: str):
         """Démarre la connexion WebSocket"""
@@ -48,9 +49,10 @@ class AlarmServerService(QObject):
     def stop(self):
         """Arrête la connexion WebSocket"""
         self._running = False
+        
         if self._thread:
             self._thread.quit()
-            self._thread.wait()
+            self._thread.wait(2000)  # Attendre maximum 2 secondes
     
     async def _run_forever(self):
         """Boucle principale de connexion avec reconnexion automatique"""
@@ -73,13 +75,37 @@ class AlarmServerService(QObject):
             print("Connected to alarm server")
             
             try:
-                async for message in ws:
-                    await self._handle_message(message)
+                # Tâche pour écouter les messages
+                listen_task = asyncio.create_task(self._listen_messages(ws))
+                # Tâche pour envoyer les messages en file
+                send_task = asyncio.create_task(self._send_queued_messages(ws))
+                
+                await asyncio.gather(listen_task, send_task)
             except websockets.exceptions.ConnectionClosed:
                 print("Connection closed")
             finally:
                 self.ws = None
                 self.disconnected.emit()
+    
+    async def _listen_messages(self, ws):
+        """Écoute les messages du serveur"""
+        async for message in ws:
+            await self._handle_message(str(message))
+    
+    async def _send_queued_messages(self, ws):
+        """Envoie les messages en file d'attente"""
+        while self._running:
+            try:
+                # Vérifier s'il y a des messages à envoyer
+                if not self._message_queue.empty():
+                    message = self._message_queue.get_nowait()
+                    await ws.send(json.dumps(message))
+                    print(f"[Server] Message sent: {message.get('type')}")
+                else:
+                    # Attendre un peu avant de revérifier
+                    await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"Send error: {e}")
     
     async def _handle_message(self, message: str):
         """Traite un message reçu du serveur"""
@@ -136,66 +162,53 @@ class AlarmServerService(QObject):
         
         await self.ws.send(message)
     
+    def send_message_sync(self, msg_type: str, payload: Dict[str, Any]):
+        """Envoie un message de manière synchrone (pour Qt)"""
+        message = {
+            "type": msg_type,
+            "payload": payload
+        }
+        self._message_queue.put(message)
+        print(f"[Server] Message queued: {msg_type}", flush=True)
+    
     # === Méthodes de synchronisation ===
     
-    def create_alarm_sync(self, page_id: str, alarm_data: Dict[str, Any]):
-        """Crée une alarme sur le serveur (version sync pour Qt)"""
-        asyncio.run_coroutine_threadsafe(
-            self.send_message("create_alarm", {
-                "page_id": page_id,
-                **alarm_data
-            }),
-            asyncio.get_event_loop()
-        )
-    
-    def update_alarm_sync(self, alarm_id: str, updates: Dict[str, Any]):
-        """Met à jour une alarme sur le serveur"""
-        asyncio.run_coroutine_threadsafe(
-            self.send_message("update_alarm", {
-                "alarm_id": alarm_id,
-                **updates
-            }),
-            asyncio.get_event_loop()
-        )
-    
-    def delete_alarm_sync(self, alarm_id: str):
-        """Supprime une alarme sur le serveur"""
-        asyncio.run_coroutine_threadsafe(
-            self.send_message("delete_alarm", {
-                "alarm_id": alarm_id
-            }),
-            asyncio.get_event_loop()
-        )
-    
-    def trigger_alarm_sync(self, alarm_id: str, price: float):
-        """Déclenche une alarme"""
-        asyncio.run_coroutine_threadsafe(
-            self.send_message("trigger_alarm", {
-                "alarm_id": alarm_id,
-                "price": price
-            }),
-            asyncio.get_event_loop()
-        )
-    
-    def create_page_sync(self, name: str):
+    def create_page(self, name: str):
         """Crée une page sur le serveur"""
-        asyncio.run_coroutine_threadsafe(
-            self.send_message("create_page", {
-                "name": name
-            }),
-            asyncio.get_event_loop()
-        )
+        print(f"[Server] Creating page: {name}", flush=True)
+        self.send_message_sync("create_page", {"name": name})
     
-    def share_page_sync(self, page_id: str, subject_type: str, subject_id: str,
-                        can_view: bool = True, can_edit: bool = False):
-        """Partage une page avec un utilisateur ou groupe"""
-        asyncio.run_coroutine_threadsafe(
-            self.send_message("share_page", {
-                "page_id": page_id,
-                "subject_type": subject_type,
-                "subject_id": subject_id,
-                "can_view": can_view,
-                "can_edit": can_edit
-            }),
-            asyncio.get_event_loop()
-        )
+    def create_alarm(self, page_id: str, alarm_data: Dict[str, Any]):
+        """Crée une alarme sur le serveur"""
+        print(f"[Server] Creating alarm: {alarm_data.get('strategy_name', 'Unknown')} - {alarm_data.get('ticker', 'Unknown')}", flush=True)
+        payload = {
+            "page_id": page_id,
+            **alarm_data
+        }
+        self.send_message_sync("create_alarm", payload)
+    
+    def update_alarm(self, alarm_id: str, alarm_data: Dict[str, Any]):
+        """Met à jour une alarme"""
+        payload = {
+            "alarm_id": alarm_id,
+            **alarm_data
+        }
+        self.send_message_sync("update_alarm", payload)
+    
+    def delete_alarm(self, alarm_id: str = None, strategy_id: str = None):
+        """Supprime une alarme (par alarm_id ou strategy_id)"""
+        if strategy_id:
+            print(f"[Server] Deleting alarms for strategy: {strategy_id}", flush=True)
+            self.send_message_sync("delete_alarm", {"strategy_id": strategy_id})
+        elif alarm_id:
+            print(f"[Server] Deleting alarm: {alarm_id}", flush=True)
+            self.send_message_sync("delete_alarm", {"alarm_id": alarm_id})
+    
+    def delete_page(self, page_id: str):
+        """Supprime une page sur le serveur"""
+        print(f"[Server] Deleting page: {page_id}", flush=True)
+        self.send_message_sync("delete_page", {"page_id": page_id})
+    
+    def trigger_alarm(self, alarm_id: str, price: float):
+        """Déclenche une alarme"""
+        self.send_message_sync("trigger_alarm", {"alarm_id": alarm_id, "price": price})

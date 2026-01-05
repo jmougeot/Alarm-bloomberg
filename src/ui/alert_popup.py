@@ -11,7 +11,7 @@ class AlertPopup(QWidget):
     """Popup d'alerte animé quand une cible est atteinte"""
     
     def __init__(self, strategy_name: str, current_price: float, target_price: float, is_inferior: bool, 
-                 strategy_id: str = None, continue_callback=None, parent=None):
+                 strategy_id: str = None, continue_callback=None, parent=None): # type: ignore
         super().__init__(parent, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool) # type: ignore
         self.setAttribute(Qt.WA_TranslucentBackground) # type: ignore
         self.setAttribute(Qt.WA_DeleteOnClose) # type: ignore

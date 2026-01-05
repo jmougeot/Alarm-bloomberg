@@ -87,7 +87,7 @@ class PageWidget(QWidget):
         """Met à jour le titre de la page"""
         self.title_label.setText(self.page.name)
     
-    def add_strategy(self, strategy: Strategy):
+    def add_strategy(self, strategy: Strategy, sync_to_server: bool = True):
         """Ajoute une stratégie à la page"""
         self.strategies[strategy.id] = strategy
         
@@ -107,7 +107,9 @@ class PageWidget(QWidget):
             widget
         )
         
-        self.strategy_added.emit(self.page.id, strategy)
+        # Émettre le signal seulement si on doit synchroniser
+        if sync_to_server:
+            self.strategy_added.emit(self.page.id, strategy)
     
     def remove_strategy(self, strategy_id: str):
         """Supprime une stratégie de la page"""
