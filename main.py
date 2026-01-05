@@ -14,6 +14,7 @@ from PySide6.QtGui import QFont
 
 from src.ui.splash_screen import SplashScreen
 from src.ui.main_window import MainWindow
+from src.config import ALARM_SERVER_URL
 
 
 def main():
@@ -37,7 +38,7 @@ def main():
     
     def on_splash_finished():
         nonlocal main_window
-        main_window = MainWindow()
+        main_window = MainWindow(server_url=ALARM_SERVER_URL)
         main_window.show()
     
     # Afficher le splash screen

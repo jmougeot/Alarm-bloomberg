@@ -1,15 +1,18 @@
 # Strategy Price Monitor - Dependencies
 
 # GUI Framework (Qt pour Python)
-PySide6>=6.5.0
-
+PySide6
 # Graphiques temps réel (optionnel, pour futures extensions)
-pyqtgraph>=0.13.0
+pyqtgraph
 
 # Utilitaires
-numpy>=1.24.0
+numpy
 
-winsound
+# WebSocket pour le serveur d'alarmes
+websockets
+httpx
+aiofiles
+
 # Bloomberg API (installer séparément depuis Bloomberg SDK)
 # pip install --index-url=https://bcms.bloomberg.com/pip/simple blpapi
 # ou

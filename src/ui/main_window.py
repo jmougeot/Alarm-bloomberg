@@ -3,6 +3,7 @@ Fenêtre principale de l'application Strategy Monitor
 """
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
+import asyncio
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -14,9 +15,12 @@ from PySide6.QtGui import QAction, QKeySequence
 from ..models.page import Page
 from ..models.strategy import Strategy
 from ..services.bloomberg_service import BloombergService
+from ..services.auth_service import AuthService
+from ..services.alarm_server_service import AlarmServerService
 from .sidebar_widget import SidebarWidget
 from .page_widget import PageWidget
 from .strategy_block_widget import StrategyBlockWidget
+from .login_dialog import LoginDialog
 from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler
 from .styles.dark_theme import DARK_THEME_STYLESHEET
 
@@ -39,7 +43,7 @@ class MainWindow(QMainWindow):
     bloomberg_handler: 'BloombergHandler'
     strategy_handler: 'StrategyHandler'
     
-    def __init__(self):
+    def __init__(self, server_url: str = "http://localhost:8080"):
         super().__init__()
         
         # État global
@@ -49,6 +53,11 @@ class MainWindow(QMainWindow):
         self.current_file: Optional[str] = None
         self._bloomberg_started = False
         self._loading_workspace = False  # Flag pour éviter création page par défaut
+        
+        # Services de synchronisation
+        self.auth_service = AuthService(server_url)
+        self.alarm_server: Optional[AlarmServerService] = None
+        self._online_mode = False
         
         # Propriétés de compatibilité pour les handlers
         self._strategies_cache: dict[str, Strategy] = {}
@@ -66,6 +75,9 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self.bloomberg_handler.setup_bloomberg()
         self._apply_dark_theme()
+        
+        # Tenter la connexion au serveur
+        QTimer.singleShot(500, self._attempt_server_connection)
         
         # Charger automatiquement le dernier workspace ou créer une page par défaut
         self._loading_workspace = True
@@ -386,6 +398,10 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Appelé à la fermeture de la fenêtre"""
+        # Arrêter le serveur d'alarmes
+        if self.alarm_server:
+            self.alarm_server.stop()
+        
         # Arrêter Bloomberg
         if self.bloomberg_service:
             try:
@@ -441,14 +457,145 @@ class MainWindow(QMainWindow):
                     current_page.add_strategy(strategy)
         else:
             # Nouvelle version: pages multiples
-            for i, page_data in enumerate(pages_data):
-                page = Page.from_dict(page_data['page'])
-                self._add_page(page, select=(i == 0))
+            for page_data in pages_data:
+                page_id = page_data.get('id')
+                page_name = page_data.get('name', 'Sans nom')
                 
-                page_widget = self.pages[page.id]
+                # Créer la page
+                page_widget = self.create_page(page_name, page_id)
+                
+                # Charger les stratégies
                 for strategy_data in page_data.get('strategies', []):
                     strategy = Strategy.from_dict(strategy_data)
                     page_widget.add_strategy(strategy)
+    
+    # === Synchronisation serveur ===
+    
+    def _attempt_server_connection(self):
+        """Tente de se connecter au serveur"""
+        # Vérifier si un token existe déjà
+        if self.auth_service.load_saved_token():
+            self._start_server_sync()
+        else:
+            # Afficher le dialog de login
+            self._show_login_dialog()
+    
+    def _show_login_dialog(self):
+        """Affiche le dialog de connexion"""
+        dialog = LoginDialog(self)
+        dialog.login_successful.connect(self._on_login_attempt)
         
-        # Forcer l'abonnement de tous les tickers après chargement
+        if dialog.exec():
+            # Utilisateur a cliqué "Continuer hors ligne"
+            self._online_mode = False
+            self.statusbar.showMessage("Mode hors ligne")
+        else:
+            self._online_mode = False
+    
+    def _on_login_attempt(self, username: str, password: str):
+        """Appelé quand l'utilisateur tente de se connecter"""
+        dialog = self.sender()
+        dialog.hide_error()
+        
+        # Déterminer si c'est un login ou register
+        is_register = dialog.is_register_mode()
+        
+        # Créer une coroutine pour l'appel async
+        async def do_auth():
+            if is_register:
+                success = await self.auth_service.register(username, password)
+            else:
+                success = await self.auth_service.login(username, password)
+            
+            return success
+        
+        # Exécuter l'authentification
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            success = loop.run_until_complete(do_auth())
+            loop.close()
+            
+            if success:
+                dialog.accept()
+                self._start_server_sync()
+                self.statusbar.showMessage(f"Connecté en tant que {self.auth_service.user_info.get('username', username)}")
+            else:
+                dialog._show_error("Échec de l'authentification. Vérifiez vos identifiants.")
+        except Exception as e:
+            dialog._show_error(f"Erreur de connexion: {str(e)}")
+    
+    def _start_server_sync(self):
+        """Démarre la synchronisation avec le serveur"""
+        try:
+            ws_url = self.auth_service.get_ws_url()
+            
+            # Créer le service WebSocket
+            self.alarm_server = AlarmServerService(self)
+            
+            # Connecter les signaux
+            self.alarm_server.connected.connect(self._on_server_connected)
+            self.alarm_server.disconnected.connect(self._on_server_disconnected)
+            self.alarm_server.error_occurred.connect(self._on_server_error)
+            self.alarm_server.initial_state_received.connect(self._on_initial_state)
+            self.alarm_server.alarm_created.connect(self._on_server_alarm_created)
+            self.alarm_server.alarm_updated.connect(self._on_server_alarm_updated)
+            self.alarm_server.alarm_deleted.connect(self._on_server_alarm_deleted)
+            self.alarm_server.page_created.connect(self._on_server_page_created)
+            
+            # Démarrer la connexion
+            self.alarm_server.start(ws_url)
+            self._online_mode = True
+            
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Erreur de connexion",
+                f"Impossible de se connecter au serveur:\n{str(e)}\n\nContinuer en mode hors ligne."
+            )
+            self._online_mode = False
+    
+    def _on_server_connected(self):
+        """Appelé quand la connexion au serveur est établie"""
+        self.statusbar.showMessage("✓ Connecté au serveur")
+        print("[Server] Connected")
+    
+    def _on_server_disconnected(self):
+        """Appelé quand la connexion au serveur est perdue"""
+        self.statusbar.showMessage("⚠ Déconnecté du serveur - Tentative de reconnexion...")
+        print("[Server] Disconnected")
+    
+    def _on_server_error(self, error_msg: str):
+        """Appelé en cas d'erreur serveur"""
+        print(f"[Server] Error: {error_msg}")
+        QMessageBox.warning(self, "Erreur serveur", error_msg)
+    
+    def _on_initial_state(self, state: dict):
+        """Appelé quand l'état initial est reçu du serveur"""
+        print(f"[Server] Initial state received: {len(state.get('pages', []))} pages, {len(state.get('alarms', []))} alarms")
+        
+        # TODO: Synchroniser l'état local avec le serveur
+        # Pour l'instant, on garde l'état local
+        
+        self.statusbar.showMessage("Synchronisé avec le serveur")
+    
+    def _on_server_alarm_created(self, alarm_data: dict):
+        """Appelé quand une alarme est créée sur le serveur"""
+        print(f"[Server] Alarm created: {alarm_data.get('id')}")
+        # TODO: Créer l'alarme localement
+    
+    def _on_server_alarm_updated(self, alarm_data: dict):
+        """Appelé quand une alarme est mise à jour sur le serveur"""
+        print(f"[Server] Alarm updated: {alarm_data.get('id')}")
+        # TODO: Mettre à jour l'alarme localement
+    
+    def _on_server_alarm_deleted(self, alarm_id: str):
+        """Appelé quand une alarme est supprimée sur le serveur"""
+        print(f"[Server] Alarm deleted: {alarm_id}")
+        # TODO: Supprimer l'alarme localement
+    
+    def _on_server_page_created(self, page_data: dict):
+        """Appelé quand une page est créée sur le serveur"""
+        print(f"[Server] Page created: {page_data.get('name')}")
+        # TODO: Créer la page localement
         self._subscribe_all_tickers()
