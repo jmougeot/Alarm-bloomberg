@@ -357,14 +357,11 @@ class StrategyBlockWidget(QFrame):
                     self._add_leg_widget(leg)
                 
                 self.strategy_updated.emit(self.strategy.id)
-                print(f"[Auto-parse] Créé {len(parsed_strategy.legs)} legs pour '{parsed_strategy.name}'")
             else:
                 # Parsing échoué, juste mettre à jour le nom
                 self.strategy.name = text
                 self.strategy_updated.emit(self.strategy.id)
         except Exception as e:
-            print(f"[Auto-parse] Erreur: {e}")
-            # En cas d'erreur, juste mettre à jour le nom
             self.strategy.name = text
             self.strategy_updated.emit(self.strategy.id)
     
