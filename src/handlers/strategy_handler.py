@@ -24,7 +24,6 @@ class StrategyHandler:
     
     def add_strategy_widget(self, strategy: 'Strategy', sync_to_server: bool = True):
         """Ajoute un widget de stratégie"""
-        import sys
         print(f"[Strategy] add_strategy_widget called - sync_to_server={sync_to_server}", flush=True)
         from ..ui.strategy_block_widget import StrategyBlockWidget
         

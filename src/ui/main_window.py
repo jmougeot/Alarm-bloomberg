@@ -20,10 +20,9 @@ from ..services.alarm_server_service import AlarmServerService
 from .sidebar_widget import SidebarWidget
 from .page_widget import PageWidget
 from .strategy_block_widget import StrategyBlockWidget
-from .login_dialog import LoginDialog
 from .group_dialog import GroupDialog
 from .share_page_dialog import SharePageDialog
-from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler
+from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler, ServerHandler, AuthHandler
 from .styles.dark_theme import DARK_THEME_STYLESHEET
 
 if TYPE_CHECKING:
@@ -31,6 +30,8 @@ if TYPE_CHECKING:
     from ..handlers.alert_handler import AlertHandler
     from ..handlers.bloomberg_handler import BloombergHandler
     from ..handlers.strategy_handler import StrategyHandler
+    from ..handlers.server_handler import ServerHandler
+    from ..handlers.auth_handler import AuthHandler
 
 
 class MainWindow(QMainWindow):
@@ -44,6 +45,8 @@ class MainWindow(QMainWindow):
     alert_handler: 'AlertHandler'
     bloomberg_handler: 'BloombergHandler'
     strategy_handler: 'StrategyHandler'
+    server_handler: 'ServerHandler'
+    auth_handler: 'AuthHandler'
     
     def __init__(self, server_url: str = "http://localhost:8080"):
         super().__init__()
@@ -60,6 +63,7 @@ class MainWindow(QMainWindow):
         self.auth_service = AuthService(server_url)
         self.alarm_server: Optional[AlarmServerService] = None
         self._online_mode = False
+        self._synced_strategies: set[str] = set()  # IDs des stratégies synchronisées avec le serveur
         
         # Propriétés de compatibilité pour les handlers
         self._strategies_cache: dict[str, Strategy] = {}
@@ -70,6 +74,8 @@ class MainWindow(QMainWindow):
         self.alert_handler = AlertHandler(self)
         self.bloomberg_handler = BloombergHandler(self)
         self.strategy_handler = StrategyHandler(self)
+        self.server_handler = ServerHandler(self)
+        self.auth_handler = AuthHandler(self)
         
         # Setup
         self._setup_ui()
@@ -79,7 +85,7 @@ class MainWindow(QMainWindow):
         self._apply_dark_theme()
         
         # Tenter la connexion au serveur
-        QTimer.singleShot(500, self._attempt_server_connection)
+        QTimer.singleShot(500, self.auth_handler.attempt_connection)
         
         # Plus de chargement automatique de workspace local
         # Les données viennent maintenant du serveur
@@ -170,7 +176,7 @@ class MainWindow(QMainWindow):
         
         # Déconnexion
         logout_action = QAction("&Déconnexion", self)
-        logout_action.triggered.connect(self._logout)
+        logout_action.triggered.connect(self.auth_handler.logout)
         file_menu.addAction(logout_action)
         
         file_menu.addSeparator()
@@ -261,7 +267,7 @@ class MainWindow(QMainWindow):
         
         # Envoyer au serveur si connecté (sauf si c'est une page déjà présente sur le serveur)
         if sync_to_server and self._online_mode and self.alarm_server:
-            self.alarm_server.create_page(page.name)
+            self.alarm_server.create_page(page.name, page.id)
         
         if select:
             self.current_page_id = page.id
@@ -315,7 +321,7 @@ class MainWindow(QMainWindow):
             # Synchroniser avec le serveur
             if self._online_mode and self.alarm_server:
                 print(f"[Page] Syncing strategy '{strategy.name}' to server", flush=True)
-                self._sync_strategy_to_server('create', strategy, page_id or self.current_page_id)
+                self.server_handler.sync_strategy('create', strategy, page_id or self.current_page_id)
         else:
             strategy_id = strategy_or_id
             print(f"[Page] Strategy updated - page_id={page_id}, strategy_id={strategy_id}", flush=True)
@@ -326,7 +332,7 @@ class MainWindow(QMainWindow):
                 if strategy_id in page_widget.strategies:
                     strategy = page_widget.strategies[strategy_id]
                     print(f"[Page] Syncing strategy update '{strategy.name}' to server", flush=True)
-                    self._sync_strategy_to_server('update', strategy, page_id)
+                    self.server_handler.sync_strategy('update', strategy, page_id)
         
         if not self._loading_workspace:
             self._trigger_auto_save()
@@ -342,86 +348,6 @@ class MainWindow(QMainWindow):
         
         if not self._loading_workspace:
             self._trigger_auto_save()
-    
-    def _sync_strategy_to_server(self, action: str, strategy, page_id: str):
-        """Synchronise une stratégie avec le serveur"""
-        if not self._online_mode or not self.alarm_server:
-            return
-        
-        from .strategy_block_widget import StrategyBlockWidget
-        from ..models.strategy import TargetCondition
-        
-        print(f"[Server] Syncing strategy '{strategy.name}' - action={action}, legs={len(strategy.legs)}", flush=True)
-        
-        if action == 'create':
-            # Si la stratégie n'a pas de legs, créer quand même une entrée sur le serveur
-            if len(strategy.legs) == 0:
-                alarm_data = {
-                    'strategy_id': strategy.id,
-                    'strategy_name': strategy.name,
-                    'leg_index': 0,
-                    'ticker': '',
-                    'option': '',  # Champ requis par le serveur
-                    'target_value': strategy.target_price or 0.0,
-                    'target_price': strategy.target_price or 0.0,
-                    'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
-                    'active': True
-                }
-                print(f"[Server] Creating alarm (no legs): {strategy.name}", flush=True)
-                self.alarm_server.create_alarm(page_id, alarm_data)
-            else:
-                for leg_idx, leg in enumerate(strategy.legs):
-                    alarm_data = {
-                        'strategy_id': strategy.id,
-                        'strategy_name': strategy.name,
-                        'leg_index': leg_idx,
-                        'ticker': leg.ticker,
-                        'option': leg.ticker,  # Champ requis par le serveur
-                        'target_value': strategy.target_price or 0.0,
-                        'target_price': strategy.target_price or 0.0,
-                        'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
-                        'active': True
-                    }
-                    print(f"[Server] Creating alarm: {strategy.name} - {leg.ticker}", flush=True)
-                    self.alarm_server.create_alarm(page_id, alarm_data)
-        
-        elif action == 'update':
-            # Pour les updates, on supprime d'abord tous les alarms de cette stratégie
-            # puis on les recrée avec les nouveaux legs
-            print(f"[Server] Updating strategy: deleting old alarms and recreating", flush=True)
-            self.alarm_server.delete_alarm(strategy_id=strategy.id)
-            
-            # Puis recréer avec les legs actuels
-            if len(strategy.legs) == 0:
-                alarm_data = {
-                    'strategy_id': strategy.id,
-                    'strategy_name': strategy.name,
-                    'leg_index': 0,
-                    'ticker': '',
-                    'option': '',
-                    'target_value': strategy.target_price or 0.0,
-                    'target_price': strategy.target_price or 0.0,
-                    'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
-                    'active': True
-                }
-                self.alarm_server.create_alarm(page_id, alarm_data)
-            else:
-                for leg_idx, leg in enumerate(strategy.legs):
-                    alarm_data = {
-                        'strategy_id': strategy.id,
-                        'strategy_name': strategy.name,
-                        'leg_index': leg_idx,
-                        'ticker': leg.ticker,
-                        'option': leg.ticker,
-                        'target_value': strategy.target_price or 0.0,
-                        'target_price': strategy.target_price or 0.0,
-                        'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
-                        'active': True
-                    }
-                    self.alarm_server.create_alarm(page_id, alarm_data)
-        
-        elif action == 'delete':
-            self.alarm_server.delete_alarm(strategy.id)
     
     def _trigger_auto_save(self):
         """Déclenche une sauvegarde automatique avec debounce"""
@@ -556,223 +482,6 @@ class MainWindow(QMainWindow):
                     strategy = Strategy.from_dict(strategy_data)
                     page_widget.add_strategy(strategy)
     
-    # === Synchronisation serveur ===
-    
-    def _attempt_server_connection(self):
-        """Tente de se connecter au serveur"""
-        # Vérifier si un token existe déjà
-        if self.auth_service.load_saved_token():
-            self._start_server_sync()
-        else:
-            # Afficher le dialog de login
-            self._show_login_dialog()
-    
-    def _show_login_dialog(self):
-        """Affiche le dialog de connexion"""
-        dialog = LoginDialog(self)
-        dialog.login_successful.connect(self._on_login_attempt)
-        
-        if dialog.exec():
-            # Utilisateur a cliqué "Continuer hors ligne"
-            self._online_mode = False
-            self.statusbar.showMessage("Mode hors ligne")
-            # Créer une page par défaut en mode hors ligne
-            self._create_default_page()
-        else:
-            self._online_mode = False
-            # Créer une page par défaut
-            self._create_default_page()
-    
-    def _on_login_attempt(self, username: str, password: str):
-        """Appelé quand l'utilisateur tente de se connecter"""
-        dialog = self.sender()
-        if hasattr(dialog, 'hide_error'):
-            dialog.hide_error()  # type: ignore
-        
-        # Déterminer si c'est un login ou register
-        is_register = dialog.is_register_mode() if hasattr(dialog, 'is_register_mode') else False  # type: ignore
-        
-        # Créer une coroutine pour l'appel async
-        async def do_auth():
-            if is_register:
-                success = await self.auth_service.register(username, password)
-            else:
-                success = await self.auth_service.login(username, password)
-            
-            return success
-        
-        # Exécuter l'authentification
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            success = loop.run_until_complete(do_auth())
-            loop.close()
-            
-            if success:
-                if hasattr(dialog, 'accept'):
-                    dialog.accept()  # type: ignore
-                self._start_server_sync()
-                username_display = self.auth_service.user_info.get('username', username) if self.auth_service.user_info else username
-                self.statusbar.showMessage(f"Connecté en tant que {username_display}")
-            else:
-                if hasattr(dialog, '_show_error'):
-                    dialog._show_error("Échec de l'authentification. Vérifiez vos identifiants.")  # type: ignore
-        except Exception as e:
-            if hasattr(dialog, '_show_error'):
-                dialog._show_error(f"Erreur de connexion: {str(e)}")  # type: ignore
-    
-    def _start_server_sync(self):
-        """Démarre la synchronisation avec le serveur"""
-        try:
-            ws_url = self.auth_service.get_ws_url()
-            
-            # Créer le service WebSocket
-            self.alarm_server = AlarmServerService(self)
-            
-            # Connecter les signaux
-            self.alarm_server.connected.connect(self._on_server_connected)
-            self.alarm_server.disconnected.connect(self._on_server_disconnected)
-            self.alarm_server.error_occurred.connect(self._on_server_error)
-            self.alarm_server.initial_state_received.connect(self._on_initial_state)
-            self.alarm_server.alarm_created.connect(self._on_server_alarm_created)
-            self.alarm_server.alarm_updated.connect(self._on_server_alarm_updated)
-            self.alarm_server.alarm_deleted.connect(self._on_server_alarm_deleted)
-            self.alarm_server.page_created.connect(self._on_server_page_created)
-            
-            # Démarrer la connexion
-            self.alarm_server.start(ws_url)
-            self._online_mode = True
-            
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                "Erreur de connexion",
-                f"Impossible de se connecter au serveur:\n{str(e)}\n\nContinuer en mode hors ligne."
-            )
-            self._online_mode = False
-    
-    def _on_server_connected(self):
-        """Appelé quand la connexion au serveur est établie"""
-        self.statusbar.showMessage("✓ Connecté au serveur")
-        print("[Server] Connected")
-    
-    def _on_server_disconnected(self):
-        """Appelé quand la connexion au serveur est perdue"""
-        self.statusbar.showMessage("⚠ Déconnecté du serveur - Tentative de reconnexion...")
-        print("[Server] Disconnected")
-    
-    def _on_server_error(self, error_msg: str):
-        """Appelé en cas d'erreur serveur"""
-        print(f"[Server] Error: {error_msg}")
-        
-        # Ignorer les erreurs non critiques
-        non_critical_errors = [
-            "Alarm not found",
-            "Page not found",
-            "Strategy not found"
-        ]
-        
-        if any(err.lower() in error_msg.lower() for err in non_critical_errors):
-            # Ces erreurs sont normales lors de la synchronisation (ex: suppression d'un élément qui n'existe pas)
-            return
-        
-        QMessageBox.warning(self, "Erreur serveur", error_msg)
-    
-    def _on_initial_state(self, state: dict):
-        """Appelé quand l'état initial est reçu du serveur"""
-        pages_data = state.get('pages', [])
-        alarms_data = state.get('alarms', [])
-        
-        print(f"[Server] Initial state received: {len(pages_data)} pages, {len(alarms_data)} alarms")
-        
-        # Charger les pages (ne pas les renvoyer au serveur)
-        from ..models.page import Page
-        for idx, page_data in enumerate(pages_data):
-            page = Page(
-                id=page_data.get('id'),
-                name=page_data.get('name', 'Page sans nom')
-            )
-            # Ne sélectionner que la première page, et ne pas synchroniser avec le serveur
-            self._add_page(page, select=(idx == 0), sync_to_server=False)
-        
-        # Charger les alarmes (converties en stratégies)
-        # On regroupe par page_id puis par strategy_id
-        from ..models.strategy import Strategy, TargetCondition, Position
-        
-        # Debug: afficher les alarmes reçues avec toutes les données
-        print(f"[Server] === Raw alarms data ===", flush=True)
-        for alarm_data in alarms_data:
-            print(f"[Server] Alarm: {alarm_data}", flush=True)
-        print(f"[Server] === End raw data ===", flush=True)
-        
-        # Regrouper les alarmes par page, puis par stratégie
-        strategies_by_page = {}  # {page_id: {strategy_id: Strategy}}
-        
-        for alarm_data in alarms_data:
-            page_id = alarm_data.get('page_id')
-            strategy_id = alarm_data.get('strategy_id')
-            
-            if not page_id or not strategy_id:
-                print(f"[Server] Warning: Alarm missing page_id or strategy_id", flush=True)
-                continue
-            
-            if page_id not in strategies_by_page:
-                strategies_by_page[page_id] = {}
-            
-            if strategy_id not in strategies_by_page[page_id]:
-                strategy = Strategy(
-                    id=strategy_id,
-                    name=alarm_data.get('strategy_name', 'Stratégie')
-                )
-                # Définir le target sur la stratégie
-                strategy.target_price = alarm_data.get('target_value', 0.0)
-                condition = alarm_data.get('condition', 'below')
-                strategy.target_condition = TargetCondition.SUPERIEUR if condition == 'above' else TargetCondition.INFERIEUR
-                strategies_by_page[page_id][strategy_id] = strategy
-            
-            # Ajouter un leg à la stratégie si le ticker n'est pas vide
-            strategy = strategies_by_page[page_id][strategy_id]
-            ticker = alarm_data.get('ticker', '') or alarm_data.get('option', '')
-            if ticker:
-                strategy.add_leg(
-                    ticker=ticker,
-                    position=Position.LONG,
-                    quantity=1
-                )
-        
-        # Ajouter les stratégies à leurs pages respectives
-        for page_id, strategies_dict in strategies_by_page.items():
-            if page_id in self.pages:
-                page_widget = self.pages[page_id]
-                for strategy in strategies_dict.values():
-                    print(f"[Server] Adding strategy '{strategy.name}' to page {page_id}", flush=True)
-                    page_widget.add_strategy(strategy, sync_to_server=False)
-            else:
-                print(f"[Server] Warning: Page {page_id} not found for strategies", flush=True)
-        
-        self.statusbar.showMessage(f"Synchronisé: {len(pages_data)} pages, {len(alarms_data)} alarmes", 5000)
-    
-    def _on_server_alarm_created(self, alarm_data: dict):
-        """Appelé quand une alarme est créée sur le serveur"""
-        print(f"[Server] Alarm created: {alarm_data.get('id')}")
-        # TODO: Créer l'alarme localement
-    
-    def _on_server_alarm_updated(self, alarm_data: dict):
-        """Appelé quand une alarme est mise à jour sur le serveur"""
-        print(f"[Server] Alarm updated: {alarm_data.get('id')}")
-        # TODO: Mettre à jour l'alarme localement
-    
-    def _on_server_alarm_deleted(self, alarm_id: str):
-        """Appelé quand une alarme est supprimée sur le serveur"""
-        print(f"[Server] Alarm deleted: {alarm_id}")
-        # TODO: Supprimer l'alarme localement
-    
-    def _on_server_page_created(self, page_data: dict):
-        """Appelé quand une page est créée sur le serveur"""
-        print(f"[Server] Page created: {page_data.get('name')}")
-        # TODO: Créer la page localement
-        self._subscribe_all_tickers()
-    
     def closeEvent(self, event):
         """Appelé quand l'application se ferme"""
         # Si connecté au serveur, les données sont déjà synchronisées
@@ -789,27 +498,6 @@ class MainWindow(QMainWindow):
                 pass
         
         event.accept()
-    
-    def _logout(self):
-        """Déconnexion"""
-        reply = QMessageBox.question(
-            self,
-            "Déconnexion",
-            "Voulez-vous vous déconnecter?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No  # type: ignore
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:  # type: ignore
-            # Déconnecter du serveur
-            if self.alarm_server:
-                self.alarm_server.stop()
-                self.alarm_server = None
-            
-            # Supprimer le token
-            self.auth_service.logout()
-            
-            # Fermer l'application
-            self.close()
     
     def _manage_groups(self):
         """Ouvre le dialog de gestion des groupes"""

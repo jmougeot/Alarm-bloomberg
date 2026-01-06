@@ -210,6 +210,19 @@ class SidebarWidget(QWidget):
             first_page_id = next(iter(self.pages.keys()))
             self.select_page(first_page_id)
     
+    def clear_pages(self):
+        """Supprime toutes les pages de la sidebar"""
+        # Supprimer tous les items de page
+        for page_id in list(self.page_items.keys()):
+            item = self.page_items.pop(page_id)
+            self.pages_layout.removeWidget(item)
+            item.deleteLater()
+        
+        # Vider les dictionnaires
+        self.pages.clear()
+        self.page_items.clear()
+        self.current_page_id = None
+    
     def select_page(self, page_id: str):
         """Sélectionne une page"""
         if page_id not in self.pages:

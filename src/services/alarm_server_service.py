@@ -16,6 +16,7 @@ class AlarmServerService(QObject):
     connected = Signal()
     disconnected = Signal()
     error_occurred = Signal(str)
+    auth_required = Signal()  # Émis quand une ré-authentification est nécessaire (HTTP 403)
     
     # Signaux de synchronisation
     initial_state_received = Signal(dict)  # État initial du serveur
@@ -60,8 +61,17 @@ class AlarmServerService(QObject):
             try:
                 await self._connect_and_listen()
             except Exception as e:
-                print(f"WebSocket error: {e}")
-                self.error_occurred.emit(str(e))
+                error_str = str(e)
+                # HTTP 403 = non autorisé, demander une ré-authentification
+                if "403" in error_str or "Forbidden" in error_str:
+                    print(f"[Server] Error: server rejected WebSocket connection: HTTP 403")
+                    self.error_occurred.emit("server rejected WebSocket connection: HTTP 403")
+                    self._running = False  # Arrêter les tentatives de reconnexion
+                    self.auth_required.emit()  # Demander la ré-authentification
+                    return
+                else:
+                    print(f"WebSocket error: {e}")
+                    self.error_occurred.emit(str(e))
                 
             if self._running:
                 print(f"Reconnecting in {self._reconnect_delay} seconds...")
@@ -173,10 +183,13 @@ class AlarmServerService(QObject):
     
     # === Méthodes de synchronisation ===
     
-    def create_page(self, name: str):
+    def create_page(self, name: str, page_id: str = None):
         """Crée une page sur le serveur"""
-        print(f"[Server] Creating page: {name}", flush=True)
-        self.send_message_sync("create_page", {"name": name})
+        print(f"[Server] Creating page: {name} (id={page_id})", flush=True)
+        payload = {"name": name}
+        if page_id:
+            payload["id"] = page_id
+        self.send_message_sync("create_page", payload)
     
     def create_alarm(self, page_id: str, alarm_data: Dict[str, Any]):
         """Crée une alarme sur le serveur"""
