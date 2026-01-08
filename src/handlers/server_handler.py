@@ -83,30 +83,64 @@ class ServerHandler:
             self.window.alarm_server.delete_alarm(strategy.id)
     
     def _create_strategy_alarms(self, strategy: Strategy, page_id: str):
-        """Crée les alarmes pour une stratégie"""
-        if len(strategy.legs) == 0:
-            alarm_data = self._build_alarm_data(strategy, 0, '', '')
-            print(f"[Server] Creating alarm (no legs): {strategy.name}", flush=True)
+        """Crée les alarmes pour une stratégie (une alarme par leg)"""
+        # Filtrer les legs avec ticker vide
+        legs_with_ticker = [leg for leg in strategy.legs if leg.ticker and leg.ticker.strip()]
+        
+        if len(legs_with_ticker) == 0:
+            # Stratégie sans legs valides - créer une alarme placeholder
+            alarm_data = self._build_alarm_data(strategy, 0, None)
             self.window.alarm_server.create_alarm(page_id, alarm_data)
         else:
-            for leg_idx, leg in enumerate(strategy.legs):
-                alarm_data = self._build_alarm_data(strategy, leg_idx, leg.ticker, leg.ticker)
-                print(f"[Server] Creating alarm: {strategy.name} - {leg.ticker}", flush=True)
+            for leg_idx, leg in enumerate(legs_with_ticker):
+                alarm_data = self._build_alarm_data(strategy, leg_idx, leg)
                 self.window.alarm_server.create_alarm(page_id, alarm_data)
+        
+        print(f"[Server] Synced strategy '{strategy.name}' with {len(legs_with_ticker)} legs")
     
-    def _build_alarm_data(self, strategy: Strategy, leg_idx: int, ticker: str, option: str) -> dict:
-        """Construit les données d'alarme pour le serveur"""
-        return {
+    def _build_alarm_data(self, strategy: Strategy, leg_idx: int, leg) -> dict:
+        """Construit les données d'alarme pour le serveur
+        
+        Args:
+            strategy: La stratégie parente
+            leg_idx: Index du leg dans la stratégie
+            leg: L'objet OptionLeg (peut être None si stratégie sans legs)
+        """
+        from ..models.strategy import Position
+        
+        data = {
             'strategy_id': strategy.id,
             'strategy_name': strategy.name,
             'leg_index': leg_idx,
-            'ticker': ticker,
-            'option': option,
             'target_value': strategy.target_price or 0.0,
             'target_price': strategy.target_price or 0.0,
             'condition': 'above' if strategy.target_condition == TargetCondition.SUPERIEUR else 'below',
-            'active': True
+            'active': True,
+            # Client/Action de la stratégie
+            'client': strategy.client or '',
+            'action': strategy.action or '',
+            'status': strategy.status.value if strategy.status else 'En cours'
         }
+        
+        # Ajouter les données du leg s'il existe
+        if leg:
+            data.update({
+                'leg_id': leg.id,
+                'ticker': leg.ticker,
+                'option': leg.ticker,  # Pour compatibilité
+                'position': leg.position.value,  # 'long' ou 'short'
+                'quantity': leg.quantity
+            })
+        else:
+            data.update({
+                'leg_id': '',
+                'ticker': '',
+                'option': '',
+                'position': 'long',
+                'quantity': 1
+            })
+        
+        return data
     
     # === Callbacks serveur ===
     
@@ -182,9 +216,14 @@ class ServerHandler:
     
     def _group_alarms_by_strategy(self, alarms_data: list) -> dict:
         """Regroupe les alarmes par page et stratégie"""
+        from ..models.strategy import StrategyStatus, OptionLeg
+        
         strategies_by_page = {}
         
-        for alarm_data in alarms_data:
+        # Trier par leg_index pour garantir l'ordre des legs
+        sorted_alarms = sorted(alarms_data, key=lambda x: (x.get('strategy_id', ''), x.get('leg_index', 0)))
+        
+        for alarm_data in sorted_alarms:
             page_id = alarm_data.get('page_id')
             strategy_id = alarm_data.get('strategy_id')
             
@@ -195,20 +234,58 @@ class ServerHandler:
                 strategies_by_page[page_id] = {}
             
             if strategy_id not in strategies_by_page[page_id]:
+                # Créer la stratégie avec toutes ses propriétés
                 strategy = Strategy(
                     id=strategy_id,
-                    name=alarm_data.get('strategy_name', 'Stratégie')
+                    name=alarm_data.get('strategy_name', 'Stratégie'),
+                    client=alarm_data.get('client') or None,
+                    action=alarm_data.get('action') or None
                 )
-                strategy.target_price = alarm_data.get('target_value', 0.0)
+                strategy.target_price = alarm_data.get('target_value', 0.0) or alarm_data.get('target_price', 0.0)
                 condition = alarm_data.get('condition', 'below')
                 strategy.target_condition = TargetCondition.SUPERIEUR if condition == 'above' else TargetCondition.INFERIEUR
+                
+                # Charger le status
+                status_str = alarm_data.get('status', 'En cours')
+                try:
+                    strategy.status = StrategyStatus(status_str)
+                except ValueError:
+                    strategy.status = StrategyStatus.EN_COURS
+                
                 strategies_by_page[page_id][strategy_id] = strategy
             
             # Ajouter un leg si ticker non vide
             strategy = strategies_by_page[page_id][strategy_id]
             ticker = alarm_data.get('ticker', '') or alarm_data.get('option', '')
             if ticker:
-                strategy.add_leg(ticker=ticker, position=Position.LONG, quantity=1)
+                # Récupérer position et quantity depuis les données (avec valeurs par défaut robustes)
+                position_str = alarm_data.get('position') or 'long'  # None -> 'long'
+                position = Position.LONG if position_str == 'long' else Position.SHORT
+                quantity = alarm_data.get('quantity') or 1  # None -> 1
+                if not isinstance(quantity, int):
+                    quantity = int(quantity) if quantity else 1
+                leg_id = alarm_data.get('leg_id') or ''
+                
+                # Créer le leg avec toutes ses propriétés
+                if leg_id:
+                    leg = OptionLeg(
+                        id=leg_id,
+                        ticker=ticker,
+                        position=position,
+                        quantity=quantity
+                    )
+                else:
+                    leg = OptionLeg(
+                        ticker=ticker,
+                        position=position,
+                        quantity=quantity
+                    )
+                strategy.legs.append(leg)
+        
+        # Log résumé des stratégies chargées
+        total_strategies = sum(len(strategies) for strategies in strategies_by_page.values())
+        total_legs = sum(len(s.legs) for strategies in strategies_by_page.values() for s in strategies.values())
+        print(f"[Server] Loaded {total_strategies} strategies with {total_legs} legs total")
         
         return strategies_by_page
     

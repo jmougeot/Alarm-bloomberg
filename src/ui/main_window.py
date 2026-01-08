@@ -309,41 +309,77 @@ class MainWindow(QMainWindow):
         self._trigger_auto_save()
     
     def _on_page_modified(self, page_id: str = None, strategy_or_id = None, *args):
-        """Appelé quand une page est modifiée (stratégie ajoutée)"""
+        """Appelé quand une page est modifiée (stratégie ajoutée ou modifiée)"""
         from ..models.strategy import Strategy
         
         # Le signal peut envoyer soit un ID (str) soit un objet Strategy
         if isinstance(strategy_or_id, Strategy):
             strategy = strategy_or_id
             strategy_id = strategy.id
-            print(f"[Page] Strategy added - page_id={page_id}, strategy={strategy.name}", flush=True)
+            effective_page_id = page_id or self.current_page_id
+            print(f"[Page] Strategy added - page_id={effective_page_id}, strategy={strategy.name}", flush=True)
             
-            # Synchroniser avec le serveur
+            # Synchroniser immédiatement pour les nouvelles stratégies
             if self._online_mode and self.alarm_server:
-                print(f"[Page] Syncing strategy '{strategy.name}' to server", flush=True)
-                self.server_handler.sync_strategy('create', strategy, page_id or self.current_page_id)
+                self.server_handler.sync_strategy('create', strategy, effective_page_id)
         else:
             strategy_id = strategy_or_id
-            print(f"[Page] Strategy updated - page_id={page_id}, strategy_id={strategy_id}", flush=True)
-            
-            # Pour les mises à jour, chercher la stratégie
-            if self._online_mode and self.alarm_server and page_id and page_id in self.pages:
-                page_widget = self.pages[page_id]
-                if strategy_id in page_widget.strategies:
-                    strategy = page_widget.strategies[strategy_id]
-                    print(f"[Page] Syncing strategy update '{strategy.name}' to server", flush=True)
-                    self.server_handler.sync_strategy('update', strategy, page_id)
+            # Pour les mises à jour, utiliser un debounce par stratégie
+            self._schedule_strategy_sync(page_id, strategy_id)
         
         if not self._loading_workspace:
             self._trigger_auto_save()
+    
+    def _schedule_strategy_sync(self, page_id: str, strategy_id: str):
+        """Planifie une synchronisation de stratégie avec debounce"""
+        # Créer le dictionnaire de timers si nécessaire
+        if not hasattr(self, '_strategy_sync_timers'):
+            self._strategy_sync_timers: dict[str, QTimer] = {}
+        
+        # Annuler le timer existant pour cette stratégie
+        if strategy_id in self._strategy_sync_timers:
+            self._strategy_sync_timers[strategy_id].stop()
+        else:
+            timer = QTimer()
+            timer.setSingleShot(True)
+            self._strategy_sync_timers[strategy_id] = timer
+        
+        # Configurer le timer pour synchroniser après 500ms d'inactivité
+        timer = self._strategy_sync_timers[strategy_id]
+        try:
+            timer.timeout.disconnect()
+        except RuntimeError:
+            pass  # Pas de connexion à déconnecter
+        timer.timeout.connect(lambda: self._do_strategy_sync(page_id, strategy_id))
+        timer.start(500)
+    
+    def _do_strategy_sync(self, page_id: str, strategy_id: str):
+        """Effectue la synchronisation d'une stratégie avec le serveur"""
+        if not self._online_mode or not self.alarm_server:
+            return
+        
+        if not page_id or page_id not in self.pages:
+            return
+        
+        page_widget = self.pages[page_id]
+        if strategy_id not in page_widget.strategies:
+            return
+        
+        strategy = page_widget.strategies[strategy_id]
+        print(f"[Page] Syncing strategy update '{strategy.name}' to server", flush=True)
+        self.server_handler.sync_strategy('update', strategy, page_id)
     
     def _on_strategy_deleted(self, page_id: str, strategy_id: str):
         """Appelé quand une stratégie est supprimée"""
         print(f"[Page] Strategy deleted - page_id={page_id}, strategy_id={strategy_id}", flush=True)
         
+        # Annuler tout timer de sync en attente pour cette stratégie
+        if hasattr(self, '_strategy_sync_timers') and strategy_id in self._strategy_sync_timers:
+            self._strategy_sync_timers[strategy_id].stop()
+            del self._strategy_sync_timers[strategy_id]
+        
         # Synchroniser avec le serveur
         if self._online_mode and self.alarm_server:
-            print(f"[Page] Deleting strategy {strategy_id} from server", flush=True)
             self.alarm_server.delete_alarm(strategy_id=strategy_id)
         
         if not self._loading_workspace:
@@ -373,6 +409,11 @@ class MainWindow(QMainWindow):
         if page_id in self.pages:
             self.pages[page_id].page.name = new_name
             self.pages[page_id].update_title()
+            
+            # Synchroniser avec le serveur
+            if self._online_mode and self.alarm_server:
+                self.alarm_server.update_page(page_id, new_name)
+            
             self.statusbar.showMessage(f"Page renommée: {new_name}", 2000)
     
     def _on_page_deleted(self, page_id: str):

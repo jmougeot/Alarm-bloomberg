@@ -217,6 +217,11 @@ class AlarmServerService(QObject):
             print(f"[Server] Deleting alarm: {alarm_id}", flush=True)
             self.send_message_sync("delete_alarm", {"alarm_id": alarm_id})
     
+    def update_page(self, page_id: str, name: str):
+        """Met à jour une page sur le serveur"""
+        print(f"[Server] Updating page: {page_id} -> {name}", flush=True)
+        self.send_message_sync("update_page", {"page_id": page_id, "name": name})
+    
     def delete_page(self, page_id: str):
         """Supprime une page sur le serveur"""
         print(f"[Server] Deleting page: {page_id}", flush=True)

@@ -1,0 +1,163 @@
+name: Build Desktop App
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:  # Permet de lancer manuellement depuis GitHub
+
+env:
+  APP_NAME: "Strategy Monitor"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ===========================================
+  # BUILD WINDOWS
+  # ===========================================
+  build-windows:
+    name: 🪟 Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows executable
+        run: |
+          cd build
+          python -m PyInstaller --clean --noconfirm strategy_monitor.spec
+
+      - name: List build output
+        run: |
+          dir dist
+        shell: cmd
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Strategy-Monitor-Windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  # ===========================================
+  # BUILD MACOS
+  # ===========================================
+  build-macos:
+    name: 🍎 Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+          pip3 install pyinstaller
+
+      - name: Build macOS app
+        run: |
+          cd build
+          python3 -m PyInstaller --clean --noconfirm strategy_monitor.spec
+
+      - name: List build output
+        run: ls -la dist/
+
+      - name: Create DMG
+        run: |
+          # Install create-dmg
+          brew install create-dmg
+          
+          # Create DMG
+          create-dmg \
+            --volname "${{ env.APP_NAME }}" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "${{ env.APP_NAME }}.app" 150 200 \
+            --hide-extension "${{ env.APP_NAME }}.app" \
+            --app-drop-link 450 200 \
+            --no-internet-enable \
+            "dist/${{ env.APP_NAME }}.dmg" \
+            "dist/${{ env.APP_NAME }}.app" || true
+
+      - name: Upload macOS App
+        uses: actions/upload-artifact@v4
+        with:
+          name: Strategy-Monitor-macOS-App
+          path: dist/*.app
+          if-no-files-found: error
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Strategy-Monitor-macOS-DMG
+          path: dist/*.dmg
+          if-no-files-found: warn
+
+  # ===========================================
+  # CREATE RELEASE (only on tags)
+  # ===========================================
+  release:
+    name: 📦 Create Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ env.APP_NAME }} ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.app
+          body: |
+            ## 🚀 ${{ env.APP_NAME }} ${{ github.ref_name }}
+            
+            ### Downloads
+            - **Windows**: `Strategy-Monitor-Windows.exe`
+            - **macOS**: `Strategy-Monitor-macOS.dmg` ou `.app`
+            
+            ### Installation
+            
+            **Windows:**
+            1. Télécharger le `.exe`
+            2. Double-cliquer pour lancer
+            
+            **macOS:**
+            1. Télécharger le `.dmg`
+            2. Ouvrir et glisser l'app dans Applications
+            3. Première ouverture: Clic droit → Ouvrir (pour bypasser Gatekeeper)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
