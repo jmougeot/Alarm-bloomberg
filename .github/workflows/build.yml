@@ -6,6 +6,10 @@ on:
       - "v*"
   workflow_dispatch:  # Permet de lancer manuellement depuis GitHub
 
+# Permissions nécessaires pour créer des releases
+permissions:
+  contents: write
+
 env:
   APP_NAME: "Strategy Monitor"
   PYTHON_VERSION: "3.11"
