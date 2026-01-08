@@ -255,10 +255,23 @@ class SplashScreen(QWidget):
     
     def _finish(self):
         """Termine le splash screen"""
-        if hasattr(self, 'coin_timer'):
-            self.coin_timer.stop()
+        self._stop_all_timers()
         self.finished.emit()
         self.close()
+    
+    def _stop_all_timers(self):
+        """Arrête tous les timers proprement"""
+        if hasattr(self, 'timer') and self.timer.isActive():
+            self.timer.stop()
+        if hasattr(self, 'coin_timer') and self.coin_timer.isActive():
+            self.coin_timer.stop()
+        if hasattr(self, 'spawn_timer') and self.spawn_timer.isActive():
+            self.spawn_timer.stop()
+    
+    def closeEvent(self, event):
+        """Appelé quand la fenêtre se ferme"""
+        self._stop_all_timers()
+        super().closeEvent(event)
     
     def _start_coin_rain(self):
         """Démarre l'animation de pluie de pièces"""

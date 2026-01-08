@@ -190,11 +190,18 @@ class ServerHandler:
         
         print(f"[Server] Initial state received: {len(pages_data)} pages, {len(alarms_data)} alarms")
         
-        # Charger les pages
+        # Charger les pages avec toutes leurs propriétés
         for idx, page_data in enumerate(pages_data):
             page = Page(
                 id=page_data.get('id'),
-                name=page_data.get('name', 'Page sans nom')
+                name=page_data.get('name', 'Page sans nom'),
+                owner_id=page_data.get('owner_id'),
+                owner_name=page_data.get('owner_name'),
+                is_owner=page_data.get('is_owner', True),
+                group_id=page_data.get('group_id'),
+                group_name=page_data.get('group_name'),
+                shared_by=page_data.get('shared_by'),
+                can_edit=page_data.get('can_edit', True),
             )
             self.window._add_page(page, select=(idx == 0), sync_to_server=False)
         

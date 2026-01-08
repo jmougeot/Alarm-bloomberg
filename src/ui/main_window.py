@@ -140,6 +140,7 @@ class MainWindow(QMainWindow):
         self.sidebar.page_added.connect(self._on_page_added)
         self.sidebar.page_renamed.connect(self._on_page_renamed)
         self.sidebar.page_deleted.connect(self._on_page_deleted)
+        self.sidebar.refresh_requested.connect(self._on_refresh_requested)
         main_layout.addWidget(self.sidebar)
         
         # === Zone de contenu (pages empilées) ===
@@ -422,6 +423,28 @@ class MainWindow(QMainWindow):
             page_name = self.pages[page_id].page.name
             self._remove_page(page_id)
             self.statusbar.showMessage(f"Page '{page_name}' supprimée", 3000)
+    
+    def _on_refresh_requested(self):
+        """Rafraîchit toutes les données depuis le serveur"""
+        if not self._online_mode or not self.alarm_server:
+            self.statusbar.showMessage("⚠️ Non connecté au serveur", 3000)
+            return
+        
+        self.statusbar.showMessage("🔄 Rafraîchissement en cours...", 2000)
+        
+        # Vider toutes les pages locales
+        self.sidebar.clear_pages()
+        for page_id in list(self.pages.keys()):
+            page_widget = self.pages.pop(page_id)
+            self.page_stack.removeWidget(page_widget)
+            page_widget.deleteLater()
+        
+        self._synced_strategies.clear()
+        self.current_page_id = None
+        
+        # Relancer la connexion WebSocket pour récupérer l'état initial
+        self.server_handler.stop_sync()
+        QTimer.singleShot(500, self.server_handler.start_sync)
     
     def _subscribe_all_tickers(self):
         """S'abonne à tous les tickers de toutes les stratégies"""

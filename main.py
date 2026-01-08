@@ -4,6 +4,7 @@ Monitor de prix en temps réel pour stratégies d'options (butterfly, condor, et
 """
 import sys
 import os
+import signal
 
 # Ajouter les chemins pour les imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +29,9 @@ from src.config import ALARM_SERVER_URL
 
 
 def main():
+    # Gérer Ctrl+C proprement
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    
     # Configuration pour High DPI
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

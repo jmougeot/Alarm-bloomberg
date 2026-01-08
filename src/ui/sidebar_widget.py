@@ -2,16 +2,17 @@
 Widget de la sidebar pour naviguer entre les pages
 """
 from typing import Optional, TYPE_CHECKING
+from collections import defaultdict
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
     QLabel, QScrollArea, QLineEdit, QMenu, QInputDialog,
-    QMessageBox
+    QMessageBox, QFrame
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QAction
 
-from ..models.page import Page
+from ..models.page import Page, PageCategory
 from .styles.dark_theme import (
     SIDEBAR_STYLE, 
     SIDEBAR_ITEM_STYLE, 
@@ -21,6 +22,36 @@ from .styles.dark_theme import (
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
+
+
+class SectionHeaderWidget(QWidget):
+    """Widget pour un en-tête de section dans la sidebar"""
+    
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self.title = title
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 4)
+        layout.setSpacing(0)
+        
+        self.label = QLabel(self.title)
+        self.label.setStyleSheet("""
+            QLabel {
+                color: #888;
+                font-size: 11px;
+                font-weight: bold;
+                text-transform: uppercase;
+            }
+        """)
+        layout.addWidget(self.label)
+        layout.addStretch()
+    
+    def set_title(self, title: str):
+        self.title = title
+        self.label.setText(title)
 
 
 class SidebarItemWidget(QWidget):
@@ -38,14 +69,44 @@ class SidebarItemWidget(QWidget):
     
     def _setup_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         
-        # Nom (sans icône)
+        # Icône selon le type
+        if not self.page.is_owner:
+            icon = "👁️"  # Page en lecture seule
+        elif self.page.group_id:
+            icon = "📁"  # Page de groupe
+        else:
+            icon = ""  # Page personnelle, pas d'icône
+        
+        if icon:
+            icon_label = QLabel(icon)
+            icon_label.setStyleSheet("font-size: 12px;")
+            layout.addWidget(icon_label)
+        
+        # Nom de la page
         self.name_label = QLabel(self.page.name)
+        self.name_label.setStyleSheet("color: #fff;")
         layout.addWidget(self.name_label)
         
         layout.addStretch()
+        
+        # Badge si pas owner (read-only)
+        if not self.page.can_edit:
+            readonly_badge = QLabel("R")
+            readonly_badge.setStyleSheet("""
+                QLabel {
+                    background-color: #555;
+                    color: #aaa;
+                    font-size: 9px;
+                    font-weight: bold;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                }
+            """)
+            readonly_badge.setToolTip("Lecture seule")
+            layout.addWidget(readonly_badge)
         
         self.setStyleSheet(SIDEBAR_ITEM_STYLE)
         self.setCursor(Qt.PointingHandCursor)  # type: ignore
@@ -82,16 +143,23 @@ class SidebarItemWidget(QWidget):
             QMenu::item:selected {
                 background-color: #1e88e5;
             }
+            QMenu::item:disabled {
+                color: #666;
+            }
         """)
         
-        rename_action = QAction("Renommer", self)
+        # Renommer (seulement si owner)
+        rename_action = QAction("✏️ Renommer", self)
         rename_action.triggered.connect(self._on_rename)
+        rename_action.setEnabled(self.page.is_owner)
         menu.addAction(rename_action)
         
         menu.addSeparator()
         
+        # Supprimer (seulement si owner)
         delete_action = QAction("🗑️ Supprimer", self)
         delete_action.triggered.connect(self._on_delete)
+        delete_action.setEnabled(self.page.is_owner)
         menu.addAction(delete_action)
         
         menu.exec_(event.globalPos())
@@ -114,23 +182,25 @@ class SidebarItemWidget(QWidget):
 
 
 class SidebarWidget(QWidget):
-    """Widget de la sidebar avec la liste des pages"""
+    """Widget de la sidebar avec la liste des pages organisées par sections"""
     
     page_selected = Signal(str)  # page_id
     page_added = Signal(Page)
     page_renamed = Signal(str, str)  # page_id, new_name
     page_deleted = Signal(str)  # page_id
+    refresh_requested = Signal()  # Signal pour demander un refresh complet
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pages: dict[str, Page] = {}
         self.page_items: dict[str, SidebarItemWidget] = {}
+        self.section_headers: dict[str, SectionHeaderWidget] = {}
         self.current_page_id: Optional[str] = None
         
         self._setup_ui()
     
     def _setup_ui(self):
-        self.setFixedWidth(220)
+        self.setFixedWidth(240)
         self.setStyleSheet(SIDEBAR_STYLE)
         
         layout = QVBoxLayout(self)
@@ -162,18 +232,119 @@ class SidebarWidget(QWidget):
         
         self.pages_container = QWidget()
         self.pages_layout = QVBoxLayout(self.pages_container)
-        self.pages_layout.setContentsMargins(8, 8, 8, 8)
-        self.pages_layout.setSpacing(4)
+        self.pages_layout.setContentsMargins(0, 0, 0, 0)
+        self.pages_layout.setSpacing(0)
         self.pages_layout.addStretch()
         
         scroll_area.setWidget(self.pages_container)
         layout.addWidget(scroll_area)
         
+        # Conteneur pour les boutons du bas
+        buttons_container = QWidget()
+        buttons_layout = QHBoxLayout(buttons_container)
+        buttons_layout.setContentsMargins(8, 8, 8, 8)
+        buttons_layout.setSpacing(8)
+        
+        # Bouton refresh
+        self.refresh_btn = QPushButton("🔄")
+        self.refresh_btn.setToolTip("Rafraîchir depuis le serveur")
+        self.refresh_btn.setFixedWidth(40)
+        self.refresh_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #333;
+                color: white;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+            QPushButton:pressed {
+                background-color: #222;
+            }
+        """)
+        self.refresh_btn.clicked.connect(self._on_refresh)
+        buttons_layout.addWidget(self.refresh_btn)
+        
         # Bouton ajouter une page
         self.add_page_btn = QPushButton("+ Nouvelle page")
         self.add_page_btn.setStyleSheet(SIDEBAR_ADD_BUTTON_STYLE)
         self.add_page_btn.clicked.connect(self._on_add_page)
-        layout.addWidget(self.add_page_btn)
+        buttons_layout.addWidget(self.add_page_btn)
+        
+        layout.addWidget(buttons_container)
+    
+    def _on_refresh(self):
+        """Demande un refresh complet depuis le serveur"""
+        self.refresh_btn.setEnabled(False)
+        self.refresh_btn.setText("⏳")
+        self.refresh_requested.emit()
+        
+        # Réactiver après 2 secondes
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(2000, self._reset_refresh_button)
+    
+    def _reset_refresh_button(self):
+        """Réactive le bouton refresh"""
+        self.refresh_btn.setEnabled(True)
+        self.refresh_btn.setText("🔄")
+    
+    def _rebuild_layout(self):
+        """Reconstruit le layout avec les pages organisées par sections"""
+        # Sauvegarder la sélection actuelle
+        current_selection = self.current_page_id
+        
+        # Vider le layout (garder le stretch à la fin)
+        while self.pages_layout.count() > 1:
+            item = self.pages_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)  # type: ignore
+        
+        # Nettoyer les références aux headers
+        self.section_headers.clear()
+        
+        # Grouper les pages par section
+        sections = defaultdict(list)
+        for page in self.pages.values():
+            section_name = page.section_name
+            sections[section_name].append(page)
+        
+        # Trier les sections: "Mes pages" en premier, puis groupes, puis partagées
+        def section_sort_key(section_name: str) -> tuple:
+            if section_name.startswith("📄"):  # Mes pages
+                return (0, section_name)
+            elif section_name.startswith("📁"):  # Groupes
+                return (1, section_name)
+            elif section_name.startswith("👤"):  # Partagées
+                return (2, section_name)
+            else:
+                return (3, section_name)
+        
+        sorted_sections = sorted(sections.keys(), key=section_sort_key)
+        
+        # Insérer les sections et leurs pages
+        insert_index = 0
+        for section_name in sorted_sections:
+            # Header de section
+            header = SectionHeaderWidget(section_name)
+            self.section_headers[section_name] = header
+            self.pages_layout.insertWidget(insert_index, header)
+            insert_index += 1
+            
+            # Pages de cette section (triées par nom)
+            section_pages = sorted(sections[section_name], key=lambda p: p.name.lower())
+            for page in section_pages:
+                item = self.page_items.get(page.id)
+                if item:
+                    self.pages_layout.insertWidget(insert_index, item)
+                    insert_index += 1
+        
+        # Restaurer la sélection
+        if current_selection and current_selection in self.page_items:
+            self.page_items[current_selection].set_selected(True)
     
     def add_page(self, page: Page, select: bool = True):
         """Ajoute une page à la sidebar"""
@@ -186,11 +357,8 @@ class SidebarWidget(QWidget):
         
         self.page_items[page.id] = item
         
-        # Insérer avant le stretch
-        self.pages_layout.insertWidget(
-            self.pages_layout.count() - 1,
-            item
-        )
+        # Reconstruire le layout pour placer la page dans la bonne section
+        self._rebuild_layout()
         
         if select:
             self.select_page(page.id)
@@ -205,6 +373,9 @@ class SidebarWidget(QWidget):
         if page_id in self.pages:
             del self.pages[page_id]
         
+        # Reconstruire pour mettre à jour les sections
+        self._rebuild_layout()
+        
         # Sélectionner une autre page si c'était la page courante
         if self.current_page_id == page_id and self.pages:
             first_page_id = next(iter(self.pages.keys()))
@@ -212,15 +383,17 @@ class SidebarWidget(QWidget):
     
     def clear_pages(self):
         """Supprime toutes les pages de la sidebar"""
-        # Supprimer tous les items de page
-        for page_id in list(self.page_items.keys()):
-            item = self.page_items.pop(page_id)
-            self.pages_layout.removeWidget(item)
-            item.deleteLater()
+        # Vider le layout complet (sauf le stretch)
+        while self.pages_layout.count() > 1:
+            item = self.pages_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         
         # Vider les dictionnaires
         self.pages.clear()
         self.page_items.clear()
+        self.section_headers.clear()
         self.current_page_id = None
     
     def select_page(self, page_id: str):
