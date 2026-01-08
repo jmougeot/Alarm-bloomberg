@@ -36,8 +36,7 @@ jobs:
 
       - name: Build Windows executable
         run: |
-          cd build
-          python -m PyInstaller --clean --noconfirm strategy_monitor.spec
+          python -m PyInstaller --clean --noconfirm --workpath build/temp --distpath dist build/strategy_monitor.spec
 
       - name: List build output
         run: |
@@ -48,7 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Strategy-Monitor-Windows
-          path: dist/*.exe
+          path: dist/**/*.exe
           if-no-files-found: error
 
   # ===========================================
@@ -76,18 +75,27 @@ jobs:
 
       - name: Build macOS app
         run: |
-          cd build
-          python3 -m PyInstaller --clean --noconfirm strategy_monitor.spec
+          python3 -m PyInstaller --clean --noconfirm --workpath build/temp --distpath dist build/strategy_monitor.spec
 
       - name: List build output
-        run: ls -la dist/
+        run: ls -laR dist/
 
       - name: Create DMG
         run: |
           # Install create-dmg
           brew install create-dmg
           
-          # Create DMG
+          # Create DMG (handle app bundle path)
+          if [ -d "dist/${{ env.APP_NAME }}.app" ]; then
+            APP_PATH="dist/${{ env.APP_NAME }}.app"
+          elif [ -d "dist/${{ env.APP_NAME }}/${{ env.APP_NAME }}.app" ]; then
+            APP_PATH="dist/${{ env.APP_NAME }}/${{ env.APP_NAME }}.app"
+          else
+            echo "App not found, listing dist:"
+            ls -laR dist/
+            exit 1
+          fi
+          
           create-dmg \
             --volname "${{ env.APP_NAME }}" \
             --window-pos 200 120 \
@@ -98,13 +106,13 @@ jobs:
             --app-drop-link 450 200 \
             --no-internet-enable \
             "dist/${{ env.APP_NAME }}.dmg" \
-            "dist/${{ env.APP_NAME }}.app" || true
+            "$APP_PATH" || true
 
       - name: Upload macOS App
         uses: actions/upload-artifact@v4
         with:
           name: Strategy-Monitor-macOS-App
-          path: dist/*.app
+          path: dist/**/*.app
           if-no-files-found: error
 
       - name: Upload macOS DMG
@@ -141,13 +149,12 @@ jobs:
           files: |
             artifacts/**/*.exe
             artifacts/**/*.dmg
-            artifacts/**/*.app
           body: |
             ## 🚀 ${{ env.APP_NAME }} ${{ github.ref_name }}
             
             ### Downloads
-            - **Windows**: `Strategy-Monitor-Windows.exe`
-            - **macOS**: `Strategy-Monitor-macOS.dmg` ou `.app`
+            - **Windows**: `Strategy Monitor.exe`
+            - **macOS**: `Strategy Monitor.dmg`
             
             ### Installation
             
