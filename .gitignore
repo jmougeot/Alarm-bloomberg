@@ -27,6 +27,5 @@ Alarm/
 Thumbs.db
 
 # Distribution / packaging
-build/
 dist/
 *.egg-info/
