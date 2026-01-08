@@ -14,6 +14,7 @@ class AuthService:
         self.server_url = server_url.rstrip('/')
         self.token: Optional[str] = None
         self.user_info: Optional[Dict[str, Any]] = None
+        self.last_error: Optional[str] = None  # Dernier message d'erreur
         self._token_file = Path.home() / ".bloomberg_alarm" / "auth_token.json"
         
     async def login(self, username: str, password: str) -> bool:
@@ -53,6 +54,7 @@ class AuthService:
         Créer un nouveau compte
         Returns: True si succès, False sinon
         """
+        self.last_error = None
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -65,10 +67,21 @@ class AuthService:
                     # Auto-login après inscription
                     return await self.login(username, password)
                 else:
+                    # Parser le message d'erreur du serveur
+                    try:
+                        error_data = response.json()
+                        detail = error_data.get("detail", "")
+                        if "already registered" in detail.lower():
+                            self.last_error = "Ce nom d'utilisateur existe déjà. Utilisez l'onglet Connexion."
+                        else:
+                            self.last_error = detail or f"Erreur d'inscription ({response.status_code})"
+                    except:
+                        self.last_error = f"Erreur d'inscription ({response.status_code})"
                     print(f"Register failed: {response.status_code} - {response.text}")
                     return False
                     
         except Exception as e:
+            self.last_error = f"Erreur de connexion au serveur: {e}"
             print(f"Register error: {e}")
             return False
     

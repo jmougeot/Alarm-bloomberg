@@ -27,10 +27,10 @@ class AuthHandler:
     
     def show_login_dialog(self):
         """Affiche le dialog de connexion"""
-        dialog = LoginDialog(self.window)
-        dialog.login_successful.connect(self._on_login_attempt)
+        self._current_dialog = LoginDialog(self.window)
+        self._current_dialog.login_successful.connect(self._on_login_attempt)
         
-        if dialog.exec():
+        if self._current_dialog.exec():
             # Utilisateur a cliqué "Continuer hors ligne"
             self.window._online_mode = False
             self.window.statusbar.showMessage("Mode hors ligne")
@@ -38,15 +38,20 @@ class AuthHandler:
         else:
             self.window._online_mode = False
             self.window._create_default_page()
+        
+        self._current_dialog = None
     
     def _on_login_attempt(self, username: str, password: str):
         """Appelé quand l'utilisateur tente de se connecter"""
-        dialog = self.window.sender()
-        if hasattr(dialog, 'hide_error'):
+        dialog = self._current_dialog
+        print(f"[DEBUG] dialog type: {type(dialog)}, dialog: {dialog}")
+        
+        if dialog and hasattr(dialog, 'hide_error'):
             dialog.hide_error()
         
         # Déterminer si c'est un login ou register
-        is_register = dialog.is_register_mode() if hasattr(dialog, 'is_register_mode') else False
+        is_register = dialog.is_register_mode() if dialog and hasattr(dialog, 'is_register_mode') else False
+        print(f"[DEBUG] is_register: {is_register}, username: {username}")
         
         # Exécuter l'authentification
         try:
@@ -63,16 +68,18 @@ class AuthHandler:
             loop.close()
             
             if success:
-                if hasattr(dialog, 'accept'):
+                if dialog and hasattr(dialog, 'accept'):
                     dialog.accept()
                 self.window.server_handler.start_sync()
                 username_display = self.window.auth_service.user_info.get('username', username) if self.window.auth_service.user_info else username
                 self.window.statusbar.showMessage(f"Connecté en tant que {username_display}")
             else:
-                if hasattr(dialog, '_show_error'):
-                    dialog._show_error("Échec de l'authentification. Vérifiez vos identifiants.")
+                if dialog and hasattr(dialog, '_show_error'):
+                    # Utiliser le message d'erreur spécifique si disponible
+                    error_msg = self.window.auth_service.last_error or "Échec de l'authentification. Vérifiez vos identifiants."
+                    dialog._show_error(error_msg)
         except Exception as e:
-            if hasattr(dialog, '_show_error'):
+            if dialog and hasattr(dialog, '_show_error'):
                 dialog._show_error(f"Erreur de connexion: {str(e)}")
     
     def logout(self):
