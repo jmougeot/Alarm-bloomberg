@@ -66,6 +66,7 @@ class OptionLeg:
     bid: Optional[float] = None
     ask: Optional[float] = None
     mid: Optional[float] = None
+    delta :Optional[float] = None
     last_update: Optional[datetime] = None
     
     def update_price(self, last_price: float, bid: float, ask: float):
@@ -120,13 +121,14 @@ class Strategy:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = "Nouvelle Stratégie"
     legs: list[OptionLeg] = field(default_factory=list)
+    delta : Optional[str] = None
     client : Optional[str] = None
     action : Optional[str] = None
     
     # Prix cible et condition
     target_price: Optional[float] = None
     target_condition: TargetCondition = TargetCondition.INFERIEUR  # Alarme si prix < ou > cible
-    
+
     # Status
     status: StrategyStatus = StrategyStatus.EN_COURS
     

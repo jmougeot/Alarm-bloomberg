@@ -175,7 +175,7 @@ class GroupDialog(QDialog):
         self._update_members_panel()
         
         # Recharger les détails du groupe depuis le serveur
-        self._load_group_details(self._current_group.get('id'))
+        self._load_group_details(self._current_group.get('id')) #type: ignore
     
     def _load_group_details(self, group_id: str):
         """Charge les détails d'un groupe"""
@@ -364,7 +364,8 @@ class GroupDialog(QDialog):
             success, error = result
             if success:
                 QMessageBox.information(self, "Succès", f"'{username}' ajouté au groupe")
-                self._load_group_details(group_id)
+                self._load_group_details(group_id) #type: ignore
+     
             else:
                 QMessageBox.warning(self, "Erreur", error or "Erreur inconnue")
         
@@ -410,7 +411,7 @@ class GroupDialog(QDialog):
         def on_success(success):
             if success:
                 QMessageBox.information(self, "Succès", f"'{member_name}' retiré du groupe")
-                self._load_group_details(group_id)
+                self._load_group_details(group_id) #type: ignore
             else:
                 QMessageBox.warning(self, "Erreur", "Impossible de retirer le membre")
         

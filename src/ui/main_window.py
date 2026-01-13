@@ -24,14 +24,12 @@ from .group_dialog import GroupDialog
 from .share_page_dialog import SharePageDialog
 from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler, ServerHandler, AuthHandler
 from .styles.dark_theme import DARK_THEME_STYLESHEET
-
-if TYPE_CHECKING:
-    from ..handlers.file_handler import FileHandler
-    from ..handlers.alert_handler import AlertHandler
-    from ..handlers.bloomberg_handler import BloombergHandler
-    from ..handlers.strategy_handler import StrategyHandler
-    from ..handlers.server_handler import ServerHandler
-    from ..handlers.auth_handler import AuthHandler
+from ..handlers.file_handler import FileHandler
+from ..handlers.alert_handler import AlertHandler
+from ..handlers.bloomberg_handler import BloombergHandler
+from ..handlers.strategy_handler import StrategyHandler
+from ..handlers.server_handler import ServerHandler
+from ..handlers.auth_handler import AuthHandler
 
 
 class MainWindow(QMainWindow):

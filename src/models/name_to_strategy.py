@@ -102,8 +102,9 @@ def extract_strikes(strategy_str: str) -> List[float]:
     """Extraction avancée des strikes - gère tous les formats et conversions Bloomberg"""
     strikes = []
 
-    # Nettoyer: retirer codes produit au début (ERJ4, SFRM4, etc.)
-    cleaned_str = re.sub(r"^\s*[A-Z]{2,5}\d\s+", "", strategy_str, flags=re.IGNORECASE)
+    # Nettoyer: retirer codes produit au début (ERJ4, SFRM4, 0RG6, etc.)
+    # Pattern modifié pour accepter les codes commençant par un chiffre (ex: 0R pour SOFR)
+    cleaned_str = re.sub(r"^\s*[A-Z0-9]{2,5}\d\s+", "", strategy_str, flags=re.IGNORECASE)
 
     # Chercher d'abord les séquences avec / (priorité)
     # Pattern: nombres séparés par / (avec ou sans décimales)
@@ -325,7 +326,7 @@ def str_to_leg(match, opt_type, strategy_type, strikes) :
 def str_to_strat(info_strategy : str) -> Optional[Strategy]:
     """
     Convertit une string de stratégie en objet Strategy
-    Ex: 'Avi  SFRF6 96.50/96.625/96.75 Call Fly  buy to open'
+    Ex: 'Avi    SFRF6 96.50/96.625/96.75 Call Fly   buy to open'
     """
 
     client, name, action = separate_parts(info_strategy)
@@ -339,11 +340,12 @@ def str_to_strat(info_strategy : str) -> Optional[Strategy]:
     
     # Traiter la première partie
     strikes1 = extract_strikes(part1)
-    strategy_type1, opt_type1 = detect_strategy_type(part1, len(strikes1))  # FIXÉ: utiliser part1
+    strategy_type1, opt_type1 = detect_strategy_type(part1, len(strikes1)) 
 
     # Extraire underlying et expiry de la première partie
-    pattern = r"\b([A-Z]{2,4})([FGHJKMNQUVXZ]\d)\b"
-    match1 = re.search(pattern, part1, re.IGNORECASE)  # FIXÉ: utiliser part1
+    # Pattern modifié pour accepter les codes commençant par un chiffre (ex: 0R pour SOFR)
+    pattern = r"\b([A-Z0-9]{2,4})([FGHJKMNQUVXZ]\d)\b"
+    match1 = re.search(pattern, part1, re.IGNORECASE) 
     
     # Si pas de match, impossible de créer les tickers
     if not match1:
@@ -354,7 +356,7 @@ def str_to_strat(info_strategy : str) -> Optional[Strategy]:
     # Traiter la deuxième partie si elle existe
     if part2 is not None : 
         strikes2 = extract_strikes(part2)
-        strategy_type2, opt_type2 = detect_strategy_type(part2, len(strikes2))  # FIXÉ: utiliser part2
+        strategy_type2, opt_type2 = detect_strategy_type(part2, len(strikes2))  
         
         # Chercher underlying/expiry dans part2, sinon réutiliser match1
         match2 = re.search(pattern, part2, re.IGNORECASE)
