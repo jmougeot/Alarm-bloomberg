@@ -156,9 +156,11 @@ class OptionLegWidget(QWidget):
         """Appelé quand le bouton supprimer est cliqué"""
         self.delete_requested.emit(self.leg.id)
     
-    def update_price(self, last_price: float, bid: float, ask: float):
-        """Met à jour le prix affiché"""
+    def update_price(self, last_price: float, bid: float, ask: float, delta: float = -999.0):
+        """Met à jour le prix et le delta affichés"""
         self.leg.update_price(last_price, bid, ask)
+        if delta > -999:
+            self.leg.update_delta(delta)
         self.update_price_display()
         self.update_contribution_display()
     

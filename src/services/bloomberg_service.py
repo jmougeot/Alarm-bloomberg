@@ -23,7 +23,7 @@ except ImportError:
     print("[WARNING] blpapi non disponible - Connexion Bloomberg impossible")
 
 
-DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK"]
+DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK", "DELTA_MID"]
 DEFAULT_SERVICE = "//blp/mktdata"
 
 
@@ -77,7 +77,7 @@ class BloombergEventHandler:
 class BloombergWorker(QThread):
     """Worker thread pour gérer la session Bloomberg"""
     
-    price_updated = Signal(str, float, float, float)  # ticker, last, bid, ask
+    price_updated = Signal(str, float, float, float, float)  # ticker, last, bid, ask, delta
     subscription_started = Signal(str)  # ticker
     subscription_failed = Signal(str, str)  # ticker, error
     connection_status = Signal(bool, str)  # connected, message
@@ -202,6 +202,7 @@ class BloombergWorker(QThread):
                 last_price = None
                 bid = None
                 ask = None
+                delta = None
                 
                 if msg.hasElement("LAST_PRICE"):
                     try:
@@ -221,14 +222,21 @@ class BloombergWorker(QThread):
                     except:
                         pass
                 
+                if msg.hasElement("DELTA_MID"):
+                    try:
+                        delta = msg.getElementAsFloat("DELTA_MID")
+                    except:
+                        pass
+                
                 # Émettre seulement si on a au moins une valeur
-                if last_price is not None or bid is not None or ask is not None:
-                    print(f"[Bloomberg] Price update for {ticker}: last={last_price}, bid={bid}, ask={ask}")
+                if last_price is not None or bid is not None or ask is not None or delta is not None:
+                    print(f"[Bloomberg] Price update for {ticker}: last={last_price}, bid={bid}, ask={ask}, delta={delta}")
                     self.price_updated.emit(
                         ticker,
                         last_price if last_price is not None else -1.0,  # -1 = pas de valeur
                         bid if bid is not None else -1.0,
-                        ask if ask is not None else -1.0
+                        ask if ask is not None else -1.0,
+                        delta if delta is not None else -999.0  # -999 = pas de valeur
                     )
         
         elif event.eventType() == blpapi.Event.SUBSCRIPTION_STATUS:  # type: ignore
@@ -273,7 +281,7 @@ class BloombergService(QObject):
     """
     
     # Signaux
-    price_updated = Signal(str, float, float, float)  # ticker, last, bid, ask
+    price_updated = Signal(str, float, float, float, float)  # ticker, last, bid, ask, delta
     subscription_started = Signal(str)
     subscription_failed = Signal(str, str)
     connection_status = Signal(bool, str)
@@ -337,9 +345,9 @@ class BloombergService(QObject):
         for ticker in list(self._active_subscriptions):
             self.unsubscribe(ticker)
     
-    def _on_price_updated(self, ticker: str, last: float, bid: float, ask: float):
+    def _on_price_updated(self, ticker: str, last: float, bid: float, ask: float, delta: float):
         """Relaye le signal de mise à jour de prix"""
-        self.price_updated.emit(ticker, last, bid, ask)
+        self.price_updated.emit(ticker, last, bid, ask, delta)
     
     def _on_subscription_started(self, ticker: str):
         """Relaye le signal de subscription réussie"""

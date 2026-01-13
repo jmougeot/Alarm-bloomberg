@@ -137,6 +137,24 @@ class StrategyBlockWidget(QFrame):
         self.current_price_label.setMinimumWidth(150)
         self.current_price_label.setAlignment(Qt.AlignCenter) # type: ignore
         header_layout.addWidget(self.current_price_label)
+        
+        # Delta de la stratégie
+        header_layout.addWidget(QLabel("Δ :"))
+        self.current_delta_label = QLabel("--")
+        self.current_delta_label.setStyleSheet("""
+            QLabel {
+                background-color: #1a2e1a;
+                color: #88ff88;
+                border: 2px solid #55aa55;
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-family: 'Consolas', monospace;
+            }
+        """)
+        self.current_delta_label.setMinimumWidth(100)
+        self.current_delta_label.setAlignment(Qt.AlignCenter) # type: ignore
+        header_layout.addWidget(self.current_delta_label)
 
         # Bouton supprimer la stratégie
         self.delete_strategy_btn = QPushButton("Supprimer")
@@ -490,7 +508,7 @@ class StrategyBlockWidget(QFrame):
         self._update_target_indicator()
         self.strategy_updated.emit(self.strategy.id)
     
-    def update_price(self, ticker: str, last_price: float, bid: float, ask: float):
+    def update_price(self, ticker: str, last_price: float, bid: float, ask: float, delta: float = -999.0):
         """Met à jour le prix d'un ticker"""
         # Normaliser le ticker pour la comparaison
         ticker_normalized = normalize_ticker(ticker)
@@ -499,7 +517,7 @@ class StrategyBlockWidget(QFrame):
         for leg_id, widget in self.leg_widgets.items():
             widget_ticker = normalize_ticker(widget.ticker) if widget.ticker else ""
             if widget_ticker == ticker_normalized:
-                widget.update_price(last_price, bid, ask)
+                widget.update_price(last_price, bid, ask, delta)
                 updated = True
             # Debug: afficher les tickers comparés si pas de match
             # (décommenter pour débugger)
@@ -510,6 +528,7 @@ class StrategyBlockWidget(QFrame):
         # Mettre à jour le prix de la stratégie seulement si un leg a été mis à jour
         if updated:
             self._update_strategy_price()
+            self._update_strategy_delta()
     
     def _update_strategy_price(self):
         """Met à jour le prix total de la stratégie"""
@@ -560,6 +579,54 @@ class StrategyBlockWidget(QFrame):
             """)
         
         self._update_target_indicator()
+    
+    def _update_strategy_delta(self):
+        """Met à jour le delta total de la stratégie"""
+        delta = self.strategy.calculate_strategy_delta()
+        
+        if delta is not None:
+            self.current_delta_label.setText(f"{delta:.2f}")
+            
+            # Couleur selon positif/négatif
+            if delta >= 0:
+                self.current_delta_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #1a2e1a;
+                        color: #88ff88;
+                        border: 2px solid #55aa55;
+                        border-radius: 6px;
+                        padding: 8px 12px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        font-family: 'Consolas', monospace;
+                    }
+                """)
+            else:
+                self.current_delta_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #2e1a1a;
+                        color: #ff8888;
+                        border: 2px solid #aa5555;
+                        border-radius: 6px;
+                        padding: 8px 12px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        font-family: 'Consolas', monospace;
+                    }
+                """)
+        else:
+            self.current_delta_label.setText("--")
+            self.current_delta_label.setStyleSheet("""
+                QLabel {
+                    background-color: #1a2e1a;
+                    color: #888;
+                    border: 2px solid #444;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 16px;
+                    font-family: 'Consolas', monospace;
+                }
+            """)
     
     def _update_target_indicator(self):
         """Met à jour l'indicateur de cible (seulement si status EN_COURS)"""

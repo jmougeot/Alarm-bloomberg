@@ -33,10 +33,10 @@ class BloombergHandler:
                 for ticker in strategy.get_all_tickers():
                     self.window.bloomberg_service.subscribe(ticker)  # type: ignore
     
-    def on_price_updated(self, ticker: str, last: float, bid: float, ask: float):
+    def on_price_updated(self, ticker: str, last: float, bid: float, ask: float, delta: float):
         """Appelé quand un prix est mis à jour"""
         for widget in self.window.strategy_widgets.values():
-            widget.update_price(ticker, last, bid, ask)
+            widget.update_price(ticker, last, bid, ask, delta)
     
     def on_connection_status(self, connected: bool, message: str):
         """Appelé quand le status de connexion change"""

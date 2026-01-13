@@ -121,10 +121,10 @@ class PageWidget(QWidget):
         if strategy_id in self.strategies:
             del self.strategies[strategy_id]
     
-    def update_price(self, ticker: str, last: float, bid: float, ask: float):
+    def update_price(self, ticker: str, last: float, bid: float, ask: float, delta: float = -999.0):
         """Met à jour les prix pour un ticker"""
         for widget in self.strategy_widgets.values():
-            widget.update_price(ticker, last, bid, ask)
+            widget.update_price(ticker, last, bid, ask, delta)
     
     def get_all_tickers(self) -> set[str]:
         """Retourne tous les tickers de la page"""

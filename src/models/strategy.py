@@ -81,6 +81,12 @@ class OptionLeg:
             self.mid = (self.bid + self.ask) / 2
         self.last_update = datetime.now()
     
+    def update_delta(self, delta: float):
+        """Met à jour le delta de l'option. Ignore -999 (pas de donnée)."""
+        if delta is not None and delta > -999:
+            self.delta = delta
+            self.last_update = datetime.now()
+    
     def get_price_contribution(self) -> Optional[float]:
         """
         Retourne la contribution au prix de la stratégie.
@@ -92,6 +98,17 @@ class OptionLeg:
         
         multiplier = 1 if self.position == Position.LONG else -1
         return price * multiplier * self.quantity
+    
+    def get_delta_contribution(self) -> Optional[float]:
+        """
+        Retourne la contribution au delta de la stratégie.
+        Long = +delta, Short = -delta
+        """
+        if self.delta is None:
+            return None
+        
+        multiplier = 1 if self.position == Position.LONG else -1
+        return self.delta * multiplier * self.quantity
     
     def to_dict(self) -> dict:
         """Convertit en dictionnaire pour sauvegarde"""
@@ -172,6 +189,23 @@ class Strategy:
             contribution = leg.get_price_contribution()
             if contribution is None:
                 return None  # Prix incomplet
+            total += contribution
+        
+        return total
+    
+    def calculate_strategy_delta(self) -> Optional[float]:
+        """
+        Calcule le delta de la stratégie en additionnant les contributions de chaque jambe.
+        Retourne None si une jambe n'a pas de delta.
+        """
+        if not self.legs:
+            return None
+        
+        total = 0.0
+        for leg in self.legs:
+            contribution = leg.get_delta_contribution()
+            if contribution is None:
+                return None  # Delta incomplet
             total += contribution
         
         return total
