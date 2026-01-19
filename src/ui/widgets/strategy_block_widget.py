@@ -526,11 +526,8 @@ class StrategyBlockWidget(QFrame):
         for leg_id, widget in self.leg_widgets.items():
             widget_ticker = normalize_ticker(widget.ticker) if widget.ticker else ""
             if widget_ticker == ticker_normalized:
-                print(f"[Strategy] Updating leg {leg_id} with price for {ticker_normalized}")
                 widget.update_price(last_price, bid, ask, delta)
                 updated = True
-            elif widget_ticker:
-                print(f"[Strategy] No match: leg '{widget_ticker}' != received '{ticker_normalized}'")
         
         # Mettre à jour le prix de la stratégie seulement si un leg a été mis à jour
         if updated:

@@ -21,11 +21,32 @@ except ImportError:
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 
 from src.ui.popups.splash_screen import SplashScreen
 from src.ui.main_window import MainWindow
 from src.config import ALARM_SERVER_URL
+
+
+def get_icon_path():
+    """Retourne le chemin de l'icône, compatible avec PyInstaller"""
+    if getattr(sys, 'frozen', False):
+        # Mode PyInstaller - l'icône est dans le bundle
+        base_path = sys._MEIPASS
+    else:
+        # Mode développement
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    icon_path = os.path.join(base_path, 'assets', 'icon.ico')
+    if os.path.exists(icon_path):
+        return icon_path
+    
+    # Fallback vers build/icons
+    icon_path = os.path.join(base_path, 'build', 'icons', 'icon.ico')
+    if os.path.exists(icon_path):
+        return icon_path
+    
+    return None
 
 
 def main():
@@ -46,6 +67,15 @@ def main():
     # Nom de l'application
     app.setApplicationName("Strategy Price Monitor")
     app.setOrganizationName("Bloomberg Tools")
+    
+    # Icône de l'application (taskbar, fenêtre, etc.)
+    icon_path = get_icon_path()
+    if icon_path:
+        app_icon = QIcon(icon_path)
+        app.setWindowIcon(app_icon)
+        print(f"[App] Icon loaded from: {icon_path}")
+    else:
+        print("[App] Warning: Icon not found")
     
     # Variable pour stocker la fenêtre principale
     main_window = None
