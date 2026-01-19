@@ -20,16 +20,19 @@ try:
     blpapi = _blpapi
     BLPAPI_AVAILABLE = True
     print("[Bloomberg] blpapi importé avec succès (import direct)")
-except ImportError:
-    # Essayer via blpapi_import_helper
+except Exception as e:
+    # Capture toutes les erreurs (ImportError, FileNotFoundError, OSError, etc.)
+    # La DLL blpapi3_64.dll peut manquer si le Terminal Bloomberg n'est pas installé
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bloomberg'))
         from blpapi_import_helper import blpapi as _blpapi  # type: ignore
         blpapi = _blpapi
         BLPAPI_AVAILABLE = True
         print("[Bloomberg] blpapi importé avec succès (via helper)")
-    except ImportError as e:
-        print(f"[WARNING] blpapi non disponible - Connexion Bloomberg impossible: {e}")
+    except Exception as e2:
+        print(f"[WARNING] blpapi non disponible - Connexion Bloomberg impossible")
+        print(f"[WARNING] Erreur: {e2}")
+        print("[WARNING] Assurez-vous que le Terminal Bloomberg est installé sur cette machine")
 
 
 DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK", "DELTA_MID"]
