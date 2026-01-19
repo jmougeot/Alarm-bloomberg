@@ -81,7 +81,7 @@ class OptionLeg:
             self.mid = (self.bid + self.ask) / 2
         self.last_update = datetime.now()
     
-    def update_delta(self, delta: float):
+      def update_delta(self, delta: float):
         """Met à jour le delta de l'option. Ignore -999 (pas de donnée)."""
         if delta is not None and delta > -999:
             self.delta = delta

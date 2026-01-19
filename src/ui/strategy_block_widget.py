@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QComboBox, QDoubleSpinBox,
     QFrame, QSizePolicy
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QFont
 from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition, normalize_ticker
 from .option_leg_widget import OptionLegWidget
@@ -32,12 +32,22 @@ class StrategyBlockWidget(QFrame):
     target_reached = Signal(str)  # strategy_id
     target_left = Signal(str)  # strategy_id - quand le prix sort de la zone
     
+    # Durée en secondes avant de déclencher l'alarme (évite les faux signaux)
+    ALARM_DELAY_SECONDS = 5
+    
     def __init__(self, strategy: Strategy, parent=None):
         super().__init__(parent)
         self.strategy = strategy
         self.leg_widgets: dict[str, OptionLegWidget] = {}
         self._was_target_reached = False  # Pour tracker l'état précédent
         self._details_visible = True  # Les détails sont visibles par défaut
+        
+        # Timer pour confirmer l'alarme (évite les faux signaux)
+        self._alarm_timer = QTimer(self)
+        self._alarm_timer.setSingleShot(True)
+        self._alarm_timer.timeout.connect(self._on_alarm_timer_triggered)
+        self._alarm_pending = False  # True si le prix est dans la zone cible mais timer non expiré
+        
         self._setup_ui()
         self._connect_signals()
         self._load_legs()
@@ -635,6 +645,7 @@ class StrategyBlockWidget(QFrame):
             self.target_indicator.setStyleSheet("color: #666; font-size: 20px;")
             self.target_indicator.setToolTip("Alarme désactivée (stratégie non en cours)")
             self._was_target_reached = False
+            self._cancel_alarm_timer()
             return
         
         target_reached = self.strategy.is_target_reached()
@@ -646,14 +657,25 @@ class StrategyBlockWidget(QFrame):
             if self._was_target_reached:
                 self._was_target_reached = False
                 self.target_left.emit(self.strategy.id)
+            self._cancel_alarm_timer()
         elif target_reached:
-            self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
             condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
-            self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
-            # Émettre le signal seulement si on vient d'atteindre la cible
-            if not self._was_target_reached:
-                self._was_target_reached = True
-                self.target_reached.emit(self.strategy.id)
+            
+            if self._was_target_reached:
+                # Alarme déjà déclenchée, afficher en vert
+                self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
+                self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
+            elif self._alarm_pending:
+                # Timer en cours, afficher en orange avec compte à rebours
+                remaining = self._alarm_timer.remainingTime() / 1000  # en secondes
+                self.target_indicator.setStyleSheet("color: #ffa500; font-size: 20px;")
+                self.target_indicator.setToolTip(f"⏱️ Confirmation dans {remaining:.1f}s... Prix {condition_text} à {self.strategy.target_price:.4f}")
+            else:
+                # Première fois qu'on atteint la cible, démarrer le timer
+                self._start_alarm_timer()
+                remaining = self.ALARM_DELAY_SECONDS
+                self.target_indicator.setStyleSheet("color: #ffa500; font-size: 20px;")
+                self.target_indicator.setToolTip(f"⏱️ Confirmation dans {remaining:.1f}s... Prix {condition_text} à {self.strategy.target_price:.4f}")
         else:
             self.target_indicator.setStyleSheet("color: #ff4444; font-size: 20px;")
             
@@ -661,6 +683,9 @@ class StrategyBlockWidget(QFrame):
             if self._was_target_reached:
                 self._was_target_reached = False
                 self.target_left.emit(self.strategy.id)
+            
+            # Annuler le timer si le prix sort de la zone cible
+            self._cancel_alarm_timer()
             
             # Calculer la distance à la cible
             current = self.strategy.calculate_strategy_price()
@@ -670,6 +695,33 @@ class StrategyBlockWidget(QFrame):
                 self.target_indicator.setToolTip(f"{condition_text} Distance: {diff:+.4f}")
             else:
                 self.target_indicator.setToolTip("En attente...")
+    
+    def _start_alarm_timer(self):
+        """Démarre le timer de confirmation d'alarme"""
+        if not self._alarm_pending:
+            self._alarm_pending = True
+            self._alarm_timer.start(self.ALARM_DELAY_SECONDS * 1000)  # Convertir en millisecondes
+    
+    def _cancel_alarm_timer(self):
+        """Annule le timer de confirmation d'alarme"""
+        if self._alarm_pending:
+            self._alarm_timer.stop()
+            self._alarm_pending = False
+    
+    def _on_alarm_timer_triggered(self):
+        """Appelé quand le timer de confirmation expire (prix resté dans la zone pendant 5 secondes)"""
+        self._alarm_pending = False
+        
+        # Vérifier une dernière fois que le prix est toujours dans la zone cible
+        target_reached = self.strategy.is_target_reached()
+        if target_reached and self.strategy.status == StrategyStatus.EN_COURS:
+            self._was_target_reached = True
+            self.target_reached.emit(self.strategy.id)
+            
+            # Mettre à jour l'indicateur en vert
+            self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
+            condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
+            self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
     
     @property
     def strategy_id(self) -> str:
