@@ -9,7 +9,11 @@ import os
 from pathlib import Path
 
 # Chemin racine du projet
-ROOT_DIR = Path(SPECPATH).parent
+ROOT_DIR = Path(SPECPATH).parent.resolve()
+
+# Debug: afficher les chemins
+print(f"[SPEC] SPECPATH: {SPECPATH}")
+print(f"[SPEC] ROOT_DIR: {ROOT_DIR}")
 
 # Détection de la plateforme
 IS_MACOS = sys.platform == 'darwin'
@@ -17,11 +21,15 @@ IS_WINDOWS = sys.platform == 'win32'
 
 # Nom de l'application
 APP_NAME = 'Strategy Monitor'
-APP_VERSION = '2.0.0'
+APP_VERSION = '3.2.1'
 
-# Icônes
+# Icônes - chemins absolus
 ICON_MACOS = str(ROOT_DIR / 'build' / 'icons' / 'icon.icns')
 ICON_WINDOWS = str(ROOT_DIR / 'build' / 'icons' / 'icon.ico')
+
+# Debug: vérifier les icônes
+print(f"[SPEC] ICON_WINDOWS: {ICON_WINDOWS} (exists: {os.path.exists(ICON_WINDOWS)})")
+print(f"[SPEC] ICON_MACOS: {ICON_MACOS} (exists: {os.path.exists(ICON_MACOS)})")
 
 # Point d'entrée
 MAIN_SCRIPT = str(ROOT_DIR / 'main.py')
@@ -53,26 +61,40 @@ hiddenimports = [
     'src',
     'src.ui',
     'src.ui.main_window',
-    'src.ui.page_widget',
-    'src.ui.sidebar_widget',
-    'src.ui.strategy_block_widget',
-    'src.ui.option_leg_widget',
-    'src.ui.alert_popup',
-    'src.ui.login_dialog',
-    'src.ui.group_dialog',
-    'src.ui.share_page_dialog',
-    'src.ui.splash_screen',
+    # Widgets
+    'src.ui.widgets',
+    'src.ui.widgets.page_widget',
+    'src.ui.widgets.sidebar_widget',
+    'src.ui.widgets.strategy_block_widget',
+    'src.ui.widgets.option_leg_widget',
+    # Dialogs
+    'src.ui.dialogs',
+    'src.ui.dialogs.login_dialog',
+    'src.ui.dialogs.group_dialog',
+    'src.ui.dialogs.share_page_dialog',
+    # Popups
+    'src.ui.popups',
+    'src.ui.popups.alert_popup',
+    # Utils
+    'src.ui.utils',
+    'src.ui.utils.splash_screen',
+    'src.ui.utils.async_worker',
+    # Styles
     'src.ui.styles',
     'src.ui.styles.dark_theme',
+    # Models
     'src.models',
     'src.models.page',
     'src.models.strategy',
     'src.models.name_to_strategy',
+    # Services
     'src.services',
     'src.services.auth_service',
     'src.services.bloomberg_service',
-    'src.services.alarm_server_service',
+    'src.services.server_service',
+    'src.services.api_service',
     'src.services.settings_service',
+    # Handlers
     'src.handlers',
     'src.handlers.file_handler',
     'src.handlers.alert_handler',

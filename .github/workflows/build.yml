@@ -37,6 +37,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
+          python -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
+
+      - name: Verify icon exists
+        run: |
+          echo "Checking for Windows icon..."
+          dir build\icons
+          if exist build\icons\icon.ico (echo "icon.ico found!") else (echo "WARNING: icon.ico NOT found!")
+        shell: cmd
 
       - name: Build Windows executable
         run: |
@@ -76,6 +84,13 @@ jobs:
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
           pip3 install pyinstaller
+          python3 -m pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
+
+      - name: Verify icon exists
+        run: |
+          echo "Checking for macOS icon..."
+          ls -la build/icons/
+          if [ -f "build/icons/icon.icns" ]; then echo "icon.icns found!"; else echo "WARNING: icon.icns NOT found!"; fi
 
       - name: Build macOS app
         run: |
