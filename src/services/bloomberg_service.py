@@ -6,21 +6,30 @@ import sys
 import os
 import re
 
-# Ajouter le chemin du module bloomberg
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bloomberg'))
-
 from PySide6.QtCore import QObject, Signal, QThread, QMutex, QMutexLocker
 from typing import Optional
 from datetime import datetime
 
 # Import blpapi avec gestion d'erreur
+BLPAPI_AVAILABLE = False
+blpapi = None
+
 try:
-    from blpapi_import_helper import blpapi  # type: ignore
+    # Essayer d'abord l'import direct
+    import blpapi as _blpapi
+    blpapi = _blpapi
     BLPAPI_AVAILABLE = True
+    print("[Bloomberg] blpapi importé avec succès (import direct)")
 except ImportError:
-    BLPAPI_AVAILABLE = False
-    blpapi = None
-    print("[WARNING] blpapi non disponible - Connexion Bloomberg impossible")
+    # Essayer via blpapi_import_helper
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'bloomberg'))
+        from blpapi_import_helper import blpapi as _blpapi  # type: ignore
+        blpapi = _blpapi
+        BLPAPI_AVAILABLE = True
+        print("[Bloomberg] blpapi importé avec succès (via helper)")
+    except ImportError as e:
+        print(f"[WARNING] blpapi non disponible - Connexion Bloomberg impossible: {e}")
 
 
 DEFAULT_FIELDS = ["LAST_PRICE", "BID", "ASK", "DELTA_MID"]
