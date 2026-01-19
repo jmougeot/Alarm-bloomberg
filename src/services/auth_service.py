@@ -56,12 +56,18 @@ class AuthService:
         """
         self.last_error = None
         try:
+            payload = {"username": username, "password": password}
+            print(f"[DEBUG] Sending register request to {self.server_url}/register with payload: {payload}")
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.server_url}/register",
-                    json={"username": username, "password": password},
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
                     timeout=10.0
                 )
+                
+                print(f"[DEBUG] Register response: status={response.status_code}, body={response.text}")
                 
                 if response.status_code == 200:
                     # Auto-login après inscription
