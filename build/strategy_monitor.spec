@@ -34,6 +34,29 @@ print(f"[SPEC] ICON_MACOS: {ICON_MACOS} (exists: {os.path.exists(ICON_MACOS)})")
 # Point d'entrée
 MAIN_SCRIPT = str(ROOT_DIR / 'main.py')
 
+# Trouver la DLL blpapi
+def find_blpapi_dll():
+    """Trouve la DLL blpapi3_64.dll dans le site-packages"""
+    try:
+        import blpapi
+        blpapi_dir = os.path.dirname(blpapi.__file__)
+        dll_path = os.path.join(blpapi_dir, 'blpapi3_64.dll')
+        if os.path.exists(dll_path):
+            print(f"[SPEC] blpapi DLL found: {dll_path}")
+            return dll_path
+    except Exception as e:
+        print(f"[SPEC] blpapi not available: {e}")
+    return None
+
+BLPAPI_DLL = find_blpapi_dll()
+
+# Binaires à inclure (DLLs)
+binaries = []
+if BLPAPI_DLL and IS_WINDOWS:
+    # Ajouter la DLL Bloomberg au root du bundle
+    binaries.append((BLPAPI_DLL, '.'))
+    print(f"[SPEC] Adding blpapi DLL to binaries")
+
 # Données à inclure
 datas = [
     # Assets (sons, images)
@@ -48,6 +71,10 @@ hiddenimports = [
     'PySide6.QtWidgets',
     'PySide6.QtNetwork',
     'PySide6.QtMultimedia',
+    
+    # Bloomberg API
+    'blpapi',
+    'blpapi.internals',
     
     # WebSocket
     'websockets',
@@ -127,7 +154,7 @@ binaries_exclude = []
 a = Analysis(
     [MAIN_SCRIPT],
     pathex=[str(ROOT_DIR)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
