@@ -9,11 +9,11 @@ from PySide6.QtWidgets import (
     QLabel, QScrollArea, QLineEdit, QMenu, QInputDialog,
     QMessageBox, QFrame
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QAction
 
-from ..models.page import Page, PageCategory
-from .styles.dark_theme import (
+from ...models.page import Page, PageCategory
+from ..styles.dark_theme import (
     SIDEBAR_STYLE, 
     SIDEBAR_ITEM_STYLE, 
     SIDEBAR_ITEM_SELECTED_STYLE,
@@ -21,7 +21,7 @@ from .styles.dark_theme import (
 )
 
 if TYPE_CHECKING:
-    from .main_window import MainWindow
+    from ..main_window import MainWindow
 
 
 class SectionHeaderWidget(QWidget):
@@ -283,7 +283,6 @@ class SidebarWidget(QWidget):
         self.refresh_requested.emit()
         
         # Réactiver après 2 secondes
-        from PySide6.QtCore import QTimer
         QTimer.singleShot(2000, self._reset_refresh_button)
     
     def _reset_refresh_button(self):

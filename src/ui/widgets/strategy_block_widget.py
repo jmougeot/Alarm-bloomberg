@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QFont
-from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition, normalize_ticker
+from ...models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition, normalize_ticker
 from .option_leg_widget import OptionLegWidget
 
 
@@ -470,15 +470,14 @@ class StrategyBlockWidget(QFrame):
         self._add_leg_widget(leg)
         self.strategy_updated.emit(self.strategy.id)
     
-    def _on_leg_ticker_changed(self, leg_id: str, new_ticker: str):
+    def _on_leg_ticker_changed(self, leg_id: str, old_ticker: str, new_ticker: str):
         """Appelé quand un ticker de leg change"""
-        leg = self.strategy.get_leg(leg_id)
-        if leg:
-            old_ticker = leg.ticker
-            if old_ticker and old_ticker != new_ticker:
-                self.ticker_removed.emit(old_ticker)
-            if new_ticker:
-                self.ticker_added.emit(new_ticker)
+        # Désabonner l'ancien ticker s'il existe et est différent
+        if old_ticker and old_ticker != new_ticker:
+            self.ticker_removed.emit(old_ticker)
+        # Abonner au nouveau ticker s'il existe
+        if new_ticker:
+            self.ticker_added.emit(new_ticker)
         self.strategy_updated.emit(self.strategy.id)
     
     def _on_leg_position_changed(self, leg_id: str, position: Position):
@@ -527,13 +526,11 @@ class StrategyBlockWidget(QFrame):
         for leg_id, widget in self.leg_widgets.items():
             widget_ticker = normalize_ticker(widget.ticker) if widget.ticker else ""
             if widget_ticker == ticker_normalized:
+                print(f"[Strategy] Updating leg {leg_id} with price for {ticker_normalized}")
                 widget.update_price(last_price, bid, ask, delta)
                 updated = True
-            # Debug: afficher les tickers comparés si pas de match
-            # (décommenter pour débugger)
-            # else:
-            #     if widget_ticker:
-            #         print(f"[Debug] No match: '{widget_ticker}' != '{ticker_normalized}'")
+            elif widget_ticker:
+                print(f"[Strategy] No match: leg '{widget_ticker}' != received '{ticker_normalized}'")
         
         # Mettre à jour le prix de la stratégie seulement si un leg a été mis à jour
         if updated:

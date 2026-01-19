@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QMessageBox
 
-from ..ui.login_dialog import LoginDialog
+from ..ui.dialogs.login_dialog import LoginDialog
 
 if TYPE_CHECKING:
     from ..ui.main_window import MainWindow
@@ -118,7 +118,6 @@ class AuthHandler:
         # Réinitialiser les variables d'état
         self.window.current_page_id = None
         self.window._online_mode = False
-        self.window._synced_strategies.clear()
         
         # Mettre à jour la statusbar
         self.window.statusbar.showMessage("Déconnecté")

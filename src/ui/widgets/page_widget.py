@@ -9,17 +9,17 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 
-from ..models.page import Page
-from ..models.strategy import Strategy
+from ...models.page import Page
+from ...models.strategy import Strategy
 from .strategy_block_widget import StrategyBlockWidget
-from .styles.dark_theme import (
+from ..styles.dark_theme import (
     BUTTON_PRIMARY_STYLE,
     SCROLL_AREA_STYLE,
     PAGE_HEADER_STYLE
 )
 
 if TYPE_CHECKING:
-    from .main_window import MainWindow
+    from ..main_window import MainWindow
 
 
 class PageWidget(QWidget):

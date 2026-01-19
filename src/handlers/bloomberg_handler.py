@@ -35,7 +35,10 @@ class BloombergHandler:
     
     def on_price_updated(self, ticker: str, last: float, bid: float, ask: float, delta: float):
         """Appelé quand un prix est mis à jour"""
-        for widget in self.window.strategy_widgets.values():
+        print(f"[Bloomberg] Price received: {ticker} - last={last}, bid={bid}, ask={ask}, delta={delta}")
+        widgets = self.window.strategy_widgets
+        print(f"[Bloomberg] Broadcasting to {len(widgets)} strategy widgets")
+        for strategy_id, widget in widgets.items():
             widget.update_price(ticker, last, bid, ask, delta)
     
     def on_connection_status(self, connected: bool, message: str):

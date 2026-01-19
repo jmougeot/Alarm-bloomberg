@@ -3,32 +3,24 @@ Modèles de données pour les stratégies d'options
 """
 from dataclasses import dataclass, field
 from enum import Enum
-from http import client
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import uuid
 import re
+import json
 
 
 def normalize_ticker(ticker: str) -> str:
     """
     Normalise un ticker Bloomberg pour garantir la cohérence.
-    - Convertit en majuscules
-    - Corrige les variantes courantes (Comdity -> COMDTY, Comdty -> COMDTY)
-    - Supprime les espaces superflus
     """
     if not ticker:
         return ""
     
     ticker = ticker.strip().upper()
-    
-    # Corriger les variantes de "COMDTY"
-    # Remplacer COMDITY, COMDTY, CMDTY, etc. par COMDTY
     ticker = re.sub(r'\bCOMDITY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
     ticker = re.sub(r'\bCOMODITY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
     ticker = re.sub(r'\bCOMDTY\b', 'COMDTY', ticker, flags=re.IGNORECASE)
-    
-    # Normaliser les espaces multiples en un seul
     ticker = re.sub(r'\s+', ' ', ticker)
     
     return ticker
@@ -49,28 +41,28 @@ class StrategyStatus(Enum):
 
 class TargetCondition(Enum):
     """Condition de déclenchement de l'alarme"""
-    INFERIEUR = "inferieur"  # Alarme si prix <= cible
-    SUPERIEUR = "superieur"  # Alarme si prix >= cible
+    INFERIEUR = "inferieur"
+    SUPERIEUR = "superieur"
 
 
 @dataclass
 class OptionLeg:
     """Représente une jambe d'option dans une stratégie"""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    ticker: str = ""  # ex: "SFRH6C 98.00 Comdty"
+    ticker: str = ""
     position: Position = Position.LONG
     quantity: int = 1
     
-    # Prix temps réel depuis Bloomberg
+    # Prix temps réel (non persistés)
     last_price: Optional[float] = None
     bid: Optional[float] = None
     ask: Optional[float] = None
     mid: Optional[float] = None
-    delta :Optional[float] = None
+    delta: Optional[float] = None
     last_update: Optional[datetime] = None
     
     def update_price(self, last_price: float, bid: float, ask: float):
-        """Met à jour les prix de l'option. Ignore les valeurs négatives (pas de donnée)."""
+        """Met à jour les prix de l'option"""
         if last_price is not None and last_price >= 0:
             self.last_price = last_price
         if bid is not None and bid >= 0:
@@ -82,16 +74,13 @@ class OptionLeg:
         self.last_update = datetime.now()
     
     def update_delta(self, delta: float):
-        """Met à jour le delta de l'option. Ignore -999 (pas de donnée)."""
+        """Met à jour le delta de l'option"""
         if delta is not None and delta > -999:
             self.delta = delta
             self.last_update = datetime.now()
     
     def get_price_contribution(self) -> Optional[float]:
-        """
-        Retourne la contribution au prix de la stratégie.
-        Long = +prix, Short = -prix
-        """
+        """Contribution au prix de la stratégie"""
         price = self.mid if self.mid else self.last_price
         if price is None:
             return None
@@ -100,10 +89,7 @@ class OptionLeg:
         return price * multiplier * self.quantity
     
     def get_delta_contribution(self) -> Optional[float]:
-        """
-        Retourne la contribution au delta de la stratégie.
-        Long = +delta, Short = -delta
-        """
+        """Contribution au delta de la stratégie"""
         if self.delta is None:
             return None
         
@@ -111,7 +97,7 @@ class OptionLeg:
         return self.delta * multiplier * self.quantity
     
     def to_dict(self) -> dict:
-        """Convertit en dictionnaire pour sauvegarde"""
+        """Convertit en dictionnaire"""
         return {
             "id": self.id,
             "ticker": self.ticker,
@@ -122,7 +108,6 @@ class OptionLeg:
     @classmethod
     def from_dict(cls, data: dict) -> "OptionLeg":
         """Crée depuis un dictionnaire"""
-        # Normaliser le ticker pour cohérence avec Bloomberg
         ticker = normalize_ticker(data.get("ticker", ""))
         return cls(
             id=data.get("id", str(uuid.uuid4())),
@@ -134,18 +119,19 @@ class OptionLeg:
 
 @dataclass 
 class Strategy:
-    """Représente une stratégie d'options (butterfly, condor, etc.)"""
+    """Représente une stratégie d'options"""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = "Nouvelle Stratégie"
-    legs: list[OptionLeg] = field(default_factory=list)
-    delta : Optional[str] = None
-    client : Optional[str] = None
-    action : Optional[str] = None
+    legs: List[OptionLeg] = field(default_factory=list)
     
-    # Prix cible et condition
+    # Métadonnées
+    client: Optional[str] = None
+    action: Optional[str] = None
+    
+    # Alarme
     target_price: Optional[float] = None
-    target_condition: TargetCondition = TargetCondition.INFERIEUR  # Alarme si prix < ou > cible
-
+    target_condition: TargetCondition = TargetCondition.INFERIEUR
+    
     # Status
     status: StrategyStatus = StrategyStatus.EN_COURS
     
@@ -177,10 +163,7 @@ class Strategy:
         return None
     
     def calculate_strategy_price(self) -> Optional[float]:
-        """
-        Calcule le prix de la stratégie en additionnant les contributions de chaque jambe.
-        Retourne None si une jambe n'a pas de prix.
-        """
+        """Calcule le prix de la stratégie"""
         if not self.legs:
             return None
         
@@ -188,16 +171,13 @@ class Strategy:
         for leg in self.legs:
             contribution = leg.get_price_contribution()
             if contribution is None:
-                return None  # Prix incomplet
+                return None
             total += contribution
         
         return total
     
     def calculate_strategy_delta(self) -> Optional[float]:
-        """
-        Calcule le delta de la stratégie en additionnant les contributions de chaque jambe.
-        Retourne None si une jambe n'a pas de delta.
-        """
+        """Calcule le delta de la stratégie"""
         if not self.legs:
             return None
         
@@ -205,18 +185,13 @@ class Strategy:
         for leg in self.legs:
             contribution = leg.get_delta_contribution()
             if contribution is None:
-                return None  # Delta incomplet
+                return None
             total += contribution
         
         return total
     
     def is_target_reached(self) -> Optional[bool]:
-        """
-        Vérifie si le prix a atteint la cible selon la condition.
-        - INFERIEUR: alarme si prix <= cible
-        - SUPERIEUR: alarme si prix >= cible
-        Retourne None si pas de prix cible ou prix non disponible.
-        """
+        """Vérifie si le prix a atteint la cible"""
         if self.target_price is None:
             return None
         
@@ -226,15 +201,30 @@ class Strategy:
         
         if self.target_condition == TargetCondition.INFERIEUR:
             return current_price <= self.target_price
-        else:  # SUPERIEUR
+        else:
             return current_price >= self.target_price
     
-    def get_all_tickers(self) -> list[str]:
+    def get_all_tickers(self) -> List[str]:
         """Retourne tous les tickers de la stratégie"""
         return [leg.ticker for leg in self.legs if leg.ticker]
     
+    def legs_to_json(self) -> str:
+        """Sérialise les legs en JSON pour la BDD"""
+        return json.dumps([leg.to_dict() for leg in self.legs])
+    
+    @staticmethod
+    def legs_from_json(legs_json: str) -> List[OptionLeg]:
+        """Désérialise les legs depuis JSON"""
+        if not legs_json:
+            return []
+        try:
+            legs_data = json.loads(legs_json)
+            return [OptionLeg.from_dict(leg) for leg in legs_data]
+        except json.JSONDecodeError:
+            return []
+    
     def to_dict(self) -> dict:
-        """Convertit en dictionnaire pour sauvegarde"""
+        """Convertit en dictionnaire pour sauvegarde locale"""
         return {
             "id": self.id,
             "name": self.name,
@@ -247,9 +237,22 @@ class Strategy:
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
     
+    def to_server_dict(self) -> dict:
+        """Convertit en dictionnaire pour le serveur (legs en JSON)"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "client": self.client or "",
+            "action": self.action or "",
+            "status": self.status.value,
+            "target_price": self.target_price,
+            "target_condition": self.target_condition.value,
+            "legs": self.legs_to_json()
+        }
+    
     @classmethod
     def from_dict(cls, data: dict) -> "Strategy":
-        """Crée depuis un dictionnaire"""
+        """Crée depuis un dictionnaire (sauvegarde locale)"""
         condition = data.get("target_condition", "inferieur")
         strategy = cls(
             id=data.get("id", str(uuid.uuid4())),
@@ -261,10 +264,20 @@ class Strategy:
             status=StrategyStatus(data.get("status", "En cours"))
         )
         
-        for leg_data in data.get("legs", []):
-            strategy.legs.append(OptionLeg.from_dict(leg_data))
+        # Legs comme liste ou JSON string
+        legs_data = data.get("legs", [])
+        if isinstance(legs_data, str):
+            strategy.legs = cls.legs_from_json(legs_data)
+        else:
+            for leg_data in legs_data:
+                strategy.legs.append(OptionLeg.from_dict(leg_data))
         
         if data.get("created_at"):
             strategy.created_at = datetime.fromisoformat(data["created_at"])
         
         return strategy
+    
+    @classmethod
+    def from_server_dict(cls, data: dict) -> "Strategy":
+        """Crée depuis un dictionnaire serveur (legs en JSON string)"""
+        return cls.from_dict(data)

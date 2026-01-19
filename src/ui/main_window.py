@@ -16,13 +16,13 @@ from ..models.page import Page
 from ..models.strategy import Strategy
 from ..services.bloomberg_service import BloombergService
 from ..services.auth_service import AuthService
-from ..services.alarm_server_service import AlarmServerService
-from .sidebar_widget import SidebarWidget
-from .page_widget import PageWidget
-from .strategy_block_widget import StrategyBlockWidget
-from .group_dialog import GroupDialog
-from .share_page_dialog import SharePageDialog
-from ..handlers import FileHandler, AlertHandler, BloombergHandler, StrategyHandler, ServerHandler, AuthHandler
+from ..services.server_service import ServerService
+from ..services.api_service import PageService, GroupService
+from .widgets.sidebar_widget import SidebarWidget
+from .widgets.page_widget import PageWidget
+from .widgets.strategy_block_widget import StrategyBlockWidget
+from .dialogs.group_dialog import GroupDialog
+from .dialogs.share_page_dialog import SharePageDialog
 from .styles.dark_theme import DARK_THEME_STYLESHEET
 from ..handlers.file_handler import FileHandler
 from ..handlers.alert_handler import AlertHandler
@@ -59,9 +59,10 @@ class MainWindow(QMainWindow):
         
         # Services de synchronisation
         self.auth_service = AuthService(server_url)
-        self.alarm_server: Optional[AlarmServerService] = None
+        self.server_service: Optional[ServerService] = None
+        self.page_service: Optional[PageService] = None
+        self.group_service: Optional[GroupService] = None
         self._online_mode = False
-        self._synced_strategies: set[str] = set()  # IDs des stratégies synchronisées avec le serveur
         
         # Propriétés de compatibilité pour les handlers
         self._strategies_cache: dict[str, Strategy] = {}
@@ -264,9 +265,9 @@ class MainWindow(QMainWindow):
         self.page_stack.addWidget(page_widget)
         self.sidebar.add_page(page, select=select)
         
-        # Envoyer au serveur si connecté (sauf si c'est une page déjà présente sur le serveur)
-        if sync_to_server and self._online_mode and self.alarm_server:
-            self.alarm_server.create_page(page.name, page.id)
+        # Envoyer au serveur si connecté
+        if sync_to_server and self._online_mode and self.server_service:
+            self.server_handler.sync_page('create', page)
         
         if select:
             self.current_page_id = page.id
@@ -275,12 +276,13 @@ class MainWindow(QMainWindow):
         """Supprime une page"""
         if page_id in self.pages:
             page_widget = self.pages.pop(page_id)
+            page = page_widget.page
             self.page_stack.removeWidget(page_widget)
             page_widget.deleteLater()
             
             # Synchroniser avec le serveur
-            if sync_to_server and self._online_mode and self.alarm_server:
-                self.alarm_server.delete_page(page_id)
+            if sync_to_server and self._online_mode and self.server_service:
+                self.server_handler.sync_page('delete', page)
     
     def get_current_page(self) -> Optional[PageWidget]:
         """Retourne la page courante"""
@@ -307,7 +309,7 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Page '{page.name}' créée", 3000)
         self._trigger_auto_save()
     
-    def _on_page_modified(self, page_id: str = None, strategy_or_id = None, *args):
+    def _on_page_modified(self, page_id: Optional[str] = None, strategy_or_id = None, *args):
         """Appelé quand une page est modifiée (stratégie ajoutée ou modifiée)"""
         from ..models.strategy import Strategy
         
@@ -319,12 +321,13 @@ class MainWindow(QMainWindow):
             print(f"[Page] Strategy added - page_id={effective_page_id}, strategy={strategy.name}", flush=True)
             
             # Synchroniser immédiatement pour les nouvelles stratégies
-            if self._online_mode and self.alarm_server:
+            if self._online_mode and self.server_service and effective_page_id:
                 self.server_handler.sync_strategy('create', strategy, effective_page_id)
         else:
             strategy_id = strategy_or_id
             # Pour les mises à jour, utiliser un debounce par stratégie
-            self._schedule_strategy_sync(page_id, strategy_id)
+            if page_id and strategy_id:
+                self._schedule_strategy_sync(page_id, strategy_id)
         
         if not self._loading_workspace:
             self._trigger_auto_save()
@@ -354,7 +357,7 @@ class MainWindow(QMainWindow):
     
     def _do_strategy_sync(self, page_id: str, strategy_id: str):
         """Effectue la synchronisation d'une stratégie avec le serveur"""
-        if not self._online_mode or not self.alarm_server:
+        if not self._online_mode or not self.server_service:
             return
         
         if not page_id or page_id not in self.pages:
@@ -378,8 +381,8 @@ class MainWindow(QMainWindow):
             del self._strategy_sync_timers[strategy_id]
         
         # Synchroniser avec le serveur
-        if self._online_mode and self.alarm_server:
-            self.alarm_server.delete_alarm(strategy_id=strategy_id)
+        if self._online_mode and self.server_service:
+            self.server_service.delete_strategy(strategy_id)
         
         if not self._loading_workspace:
             self._trigger_auto_save()
@@ -406,12 +409,13 @@ class MainWindow(QMainWindow):
     def _on_page_renamed(self, page_id: str, new_name: str):
         """Appelé quand on renomme une page"""
         if page_id in self.pages:
-            self.pages[page_id].page.name = new_name
-            self.pages[page_id].update_title()
+            page_widget = self.pages[page_id]
+            page_widget.page.name = new_name
+            page_widget.update_title()
             
             # Synchroniser avec le serveur
-            if self._online_mode and self.alarm_server:
-                self.alarm_server.update_page(page_id, new_name)
+            if self._online_mode and self.server_service:
+                self.server_handler.sync_page('update', page_widget.page)
             
             self.statusbar.showMessage(f"Page renommée: {new_name}", 2000)
     
@@ -424,7 +428,7 @@ class MainWindow(QMainWindow):
     
     def _on_refresh_requested(self):
         """Rafraîchit toutes les données depuis le serveur"""
-        if not self._online_mode or not self.alarm_server:
+        if not self._online_mode or not self.server_service:
             self.statusbar.showMessage("⚠️ Non connecté au serveur", 3000)
             return
         
@@ -437,7 +441,6 @@ class MainWindow(QMainWindow):
             self.page_stack.removeWidget(page_widget)
             page_widget.deleteLater()
         
-        self._synced_strategies.clear()
         self.current_page_id = None
         
         # Relancer la connexion WebSocket pour récupérer l'état initial
@@ -547,10 +550,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Appelé quand l'application se ferme"""
         # Si connecté au serveur, les données sont déjà synchronisées
-        if self._online_mode and self.alarm_server:
-            # Fermer proprement la connexion WebSocket
-            if hasattr(self.alarm_server, 'stop'):
-                self.alarm_server.stop()
+        if self._online_mode and self.server_service:
+            self.server_service.stop()
         
         # Arrêter Bloomberg si démarré
         if self._bloomberg_started and self.bloomberg_service:
@@ -571,7 +572,13 @@ class MainWindow(QMainWindow):
             )
             return
         
-        dialog = GroupDialog(self.auth_service, self)
+        if not self.group_service:
+            self.group_service = GroupService(
+                self.auth_service.server_url,
+                lambda: self.auth_service.token
+            )
+        
+        dialog = GroupDialog(self.group_service, self)
         dialog.exec()
     
     def _share_current_page(self):
@@ -606,8 +613,21 @@ class MainWindow(QMainWindow):
             )
             return
         
+        # Créer les services si nécessaire
+        if not self.page_service:
+            self.page_service = PageService(
+                self.auth_service.server_url,
+                lambda: self.auth_service.token
+            )
+        if not self.group_service:
+            self.group_service = GroupService(
+                self.auth_service.server_url,
+                lambda: self.auth_service.token
+            )
+        
         dialog = SharePageDialog(
-            self.auth_service,
+            self.page_service,
+            self.group_service,
             self.current_page_id,
             page.name,
             self

@@ -47,8 +47,8 @@ class SplashScreen(QWidget):
         layout.addWidget(self.title_label)
         subtitle = QLabel("Real-Time Options Strategy Pricing")
 
-        # Image Picsou
-        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # Image Picsou - ajuster le chemin pour la nouvelle structure
+        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         picsou_path = os.path.join(app_dir, "assets", "picsou.jpg")
         if os.path.exists(picsou_path):
             picsou_label = QLabel()

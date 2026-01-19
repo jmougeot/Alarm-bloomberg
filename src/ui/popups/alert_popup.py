@@ -62,8 +62,8 @@ class AlertPopup(QWidget):
         title.setAlignment(Qt.AlignCenter) # type: ignore
         container_layout.addWidget(title)
         
-        # Image Picsou
-        picsou_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "picsou.jpg")
+        # Image Picsou - ajuster le chemin pour la nouvelle structure
+        picsou_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "assets", "picsou.jpg")
         if os.path.exists(picsou_path):
             picsou_label = QLabel()
             pixmap = QPixmap(picsou_path)

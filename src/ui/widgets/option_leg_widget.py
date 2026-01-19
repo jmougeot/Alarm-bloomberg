@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
 
-from ..models.strategy import OptionLeg, Position, normalize_ticker
+from ...models.strategy import OptionLeg, Position, normalize_ticker
 
 
 class OptionLegWidget(QWidget):
@@ -18,7 +18,7 @@ class OptionLegWidget(QWidget):
     """
     
     # Signaux
-    ticker_changed = Signal(str, str)  # leg_id, new_ticker
+    ticker_changed = Signal(str, str, str)  # leg_id, old_ticker, new_ticker
     position_changed = Signal(str, Position)  # leg_id, new_position
     quantity_changed = Signal(str, int)  # leg_id, new_quantity
     delete_requested = Signal(str)  # leg_id
@@ -135,7 +135,7 @@ class OptionLegWidget(QWidget):
         if new_ticker != self.leg.ticker:
             old_ticker = self.leg.ticker
             self.leg.ticker = new_ticker
-            self.ticker_changed.emit(self.leg.id, new_ticker)
+            self.ticker_changed.emit(self.leg.id, old_ticker, new_ticker)
     
     def _on_position_changed(self, index: int):
         """Appelé quand la position change"""
@@ -161,6 +161,7 @@ class OptionLegWidget(QWidget):
         self.leg.update_price(last_price, bid, ask)
         if delta > -999:
             self.leg.update_delta(delta)
+            print(f"[DEBUG] Delta updated for {self.leg.ticker}: {delta}")
         self.update_price_display()
         self.update_contribution_display()
     
