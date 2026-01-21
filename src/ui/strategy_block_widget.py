@@ -6,10 +6,11 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QComboBox, QDoubleSpinBox,
     QFrame, QSizePolicy
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QFont
 from ..models.strategy import Strategy, OptionLeg, Position, StrategyStatus, TargetCondition, normalize_ticker
 from .option_leg_widget import OptionLegWidget
+from datetime import datetime
 
 
 class StrategyBlockWidget(QFrame):
@@ -37,7 +38,15 @@ class StrategyBlockWidget(QFrame):
         self.strategy = strategy
         self.leg_widgets: dict[str, OptionLegWidget] = {}
         self._was_target_reached = False  # Pour tracker l'état précédent
+        self._is_in_warning_state = False  # État warning (orange) - limite dépassée mais pas encore 5s
+        self._warning_start_time: datetime | None = None  # Quand on a commencé à être en warning
         self._details_visible = True  # Les détails sont visibles par défaut
+        
+        # Timer pour vérifier si on a dépassé les 5 secondes en warning
+        self._warning_timer = QTimer(self)
+        self._warning_timer.timeout.connect(self._check_warning_timeout)
+        self._warning_timer.setInterval(500)  # Vérifier toutes les 500ms
+        
         self._setup_ui()
         self._connect_signals()
         self._load_legs()
@@ -562,33 +571,57 @@ class StrategyBlockWidget(QFrame):
         self._update_target_indicator()
     
     def _update_target_indicator(self):
-        """Met à jour l'indicateur de cible (seulement si status EN_COURS)"""
+        """Met à jour l'indicateur de cible (seulement si status EN_COURS)
+        
+        3 états possibles:
+        - Rouge (#ff4444): cible non atteinte
+        - Orange (#ffaa00): cible atteinte mais en attente de confirmation (< 5 secondes)
+        - Vert (#00ff00): cible atteinte depuis > 5 secondes -> ALERTE!
+        """
         # Ne vérifier l'alarme que si le status est EN_COURS
         if self.strategy.status != StrategyStatus.EN_COURS:
             self.target_indicator.setStyleSheet("color: #666; font-size: 20px;")
             self.target_indicator.setToolTip("Alarme désactivée (stratégie non en cours)")
+            self._reset_warning_state()
             self._was_target_reached = False
             return
         
         target_reached = self.strategy.is_target_reached()
         
         if target_reached is None:
+            # Pas de cible ou pas de prix
             self.target_indicator.setStyleSheet("color: #666; font-size: 20px;")
             self.target_indicator.setToolTip("Cible non définie ou prix non disponible")
-            # Si on avait atteint la cible avant, on est sorti
+            self._reset_warning_state()
             if self._was_target_reached:
                 self._was_target_reached = False
                 self.target_left.emit(self.strategy.id)
+                
         elif target_reached:
-            self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
-            condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
-            self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
-            # Émettre le signal seulement si on vient d'atteindre la cible
-            if not self._was_target_reached:
-                self._was_target_reached = True
-                self.target_reached.emit(self.strategy.id)
+            # La cible est atteinte
+            if self._was_target_reached:
+                # Déjà en état d'alerte confirmé (vert)
+                self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
+                condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
+                self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
+            else:
+                # Pas encore confirmé -> vérifier le temps en warning
+                if not self._is_in_warning_state:
+                    # Commencer l'état warning
+                    self._start_warning_state()
+                
+                # Afficher l'état warning (orange)
+                elapsed = self._get_warning_elapsed_seconds()
+                remaining = max(0, 5 - elapsed)
+                self.target_indicator.setStyleSheet("color: #ffaa00; font-size: 20px;")
+                condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
+                self.target_indicator.setToolTip(f"⏳ Prix {condition_text} à {self.strategy.target_price:.4f} - Alerte dans {remaining:.1f}s")
         else:
+            # Cible non atteinte -> rouge
             self.target_indicator.setStyleSheet("color: #ff4444; font-size: 20px;")
+            
+            # Réinitialiser l'état warning si on était en warning
+            self._reset_warning_state()
             
             # Si on avait atteint la cible avant, on est sorti de la zone
             if self._was_target_reached:
@@ -603,6 +636,55 @@ class StrategyBlockWidget(QFrame):
                 self.target_indicator.setToolTip(f"{condition_text} Distance: {diff:+.4f}")
             else:
                 self.target_indicator.setToolTip("En attente...")
+    
+    def _start_warning_state(self):
+        """Démarre l'état warning (orange) quand la limite est dépassée"""
+        self._is_in_warning_state = True
+        self._warning_start_time = datetime.now()
+        self._warning_timer.start()
+    
+    def _reset_warning_state(self):
+        """Réinitialise l'état warning"""
+        self._is_in_warning_state = False
+        self._warning_start_time = None
+        self._warning_timer.stop()
+    
+    def _get_warning_elapsed_seconds(self) -> float:
+        """Retourne le nombre de secondes écoulées depuis le début du warning"""
+        if self._warning_start_time is None:
+            return 0.0
+        return (datetime.now() - self._warning_start_time).total_seconds()
+    
+    def _check_warning_timeout(self):
+        """Vérifie si le temps de warning a dépassé 5 secondes pour déclencher l'alerte"""
+        if not self._is_in_warning_state:
+            return
+        
+        # Vérifier que la cible est toujours atteinte
+        target_reached = self.strategy.is_target_reached()
+        if not target_reached:
+            # Le prix est ressorti de la zone, réinitialiser
+            self._reset_warning_state()
+            self._update_target_indicator()
+            return
+        
+        elapsed = self._get_warning_elapsed_seconds()
+        if elapsed >= 5.0:
+            # 5 secondes écoulées -> déclencher l'alerte!
+            self._warning_timer.stop()
+            self._is_in_warning_state = False
+            self._was_target_reached = True
+            
+            # Mettre à jour l'indicateur en vert
+            self.target_indicator.setStyleSheet("color: #00ff00; font-size: 20px;")
+            condition_text = "inférieur" if self.strategy.target_condition == TargetCondition.INFERIEUR else "supérieur"
+            self.target_indicator.setToolTip(f"✅ ALARME! Prix {condition_text} à {self.strategy.target_price:.4f}")
+            
+            # Émettre le signal d'alerte
+            self.target_reached.emit(self.strategy.id)
+        else:
+            # Mettre à jour l'affichage du compteur
+            self._update_target_indicator()
     
     @property
     def strategy_id(self) -> str:
